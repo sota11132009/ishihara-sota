@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ブロック崩し</title>
+  <style>
+    /* 画面の中央にゲームを配置し、背景を少し暗くします */
+    body {
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      background-color: #2c3e50;
+    }
+    /* ゲーム画面（キャンバス）の見た目 */
+    canvas {
+      background-color: #ecf0f1;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="480" height="320"></canvas>
+
+<script>
+  // キャンバスの設定
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+
+  // ボールの設定
+  let x = canvas.width / 2;
+  let y = canvas.height - 30;
+  let dx = 3; // ボールの横のスピード
+  let dy = -3; // ボールの縦のスピード
+  const ballRadius = 8;
+
+  // パドル（プレイヤーの板）の設定
+  const paddleHeight = 10;
+  const paddleWidth = 75;
+  let paddleX = (canvas.width - paddleWidth) / 2;
+
+  // ブロックの設定
+  const brickRowCount = 4; // 行数
+  const brickColumnCount = 6; // 列数
+  const brickWidth = 60;
+  const brickHeight = 20;
+  const brickPadding = 12;
+  const brickOffsetTop = 30;
+  const brickOffsetLeft = 30;
+
+  // カラフルなブロックの色（行ごとに色を変えます）
+  const colors = ["#e74c3c", "#f1c40f", "#2ecc71", "#9b59b6"];
+
+  // ブロックの配列を作成
+  const bricks = [];
+  for (let c = 0; c < brickColumnCount; c++) {
+    bricks[c] = [];
+    for (let r = 0; r < brickRowCount; r++) {
+      // status: 1はブロックが存在する、0は壊れた状態
+      bricks[c][r] = { x: 0, y: 0, status: 1, color: colors[r % colors.length] };
+    }
+  }
+
+  // スコア（壊したブロックの数）
+  let score = 0;
+
+  // マウス操作のイベントリスナー
+  document.addEventListener("mousemove", mouseMoveHandler, false);
+
+  function mouseMoveHandler(e) {
+    const rect = canvas.getBoundingClientRect();
+    const relativeX = e.clientX - rect.left;
+    if (relativeX > 0 && relativeX < canvas.width) {
+      // マウスの位置に合わせてパドルの中心を移動
+      paddleX = relativeX - paddleWidth / 2;
+    }
+  }
+
+  // 衝突判定（ボールがブロックに当たったか）
+  function collisionDetection() {
+    for (let c = 0; c < brickColumnCount; c++) {
+      for (let r = 0; r < brickRowCount; r++) {
+        let b = bricks[c][r];
+        if (b.status == 1) {
+          // ボールがブロックの領域に入ったら
+          if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
+            dy = -dy; // ボールを跳ね返す
+            b.status = 0; // ブロックを消す
+            score++;
+            
+            // 全てのブロックを壊したらクリア
+            if (score === brickRowCount * brickColumnCount) {
+              drawMessage("GAME CLEAR!", "#27ae60");
+              return true; // クリアフラグを返す
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  // ボールを描画する関数
+  function drawBall() {
+    ctx.beginPath();
+    ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "#2980b9";
+    ctx.fill();
+    ctx.closePath();
+  }
+
+  // パドルを描画する関数
+  function drawPaddle() {
+    ctx.beginPath();
+    ctx.rect(paddleX, canvas.height - paddleHeight, paddleWidth, paddleHeight);
+    ctx.fillStyle = "#34495e";
+    ctx.fill();
+    ctx.closePath();
+  }
+
+  // ブロックを描画する関数
+  function drawBricks() {
+    for (let c = 0; c < brickColumnCount; c++) {
+      for (let r = 0; r < brickRowCount; r++) {
+        if (bricks[c][r].status == 1) {
+          let brickX = (c * (brickWidth + brickPadding)) + brickOffsetLeft;
+          let brickY = (r * (brickHeight + brickPadding)) + brickOffsetTop;
+          bricks[c][r].x = brickX;
+          bricks[c][r].y = brickY;
+          ctx.beginPath();
+          ctx.rect(brickX, brickY, brickWidth, brickHeight);
+          ctx.fillStyle = bricks[c][r].color;
+          ctx.fill();
+          ctx.closePath();
+        }
+      }
+    }
+  }
+
+  // 画面中央に文字を表示する関数
+  function drawMessage(text, color) {
+    ctx.font = "bold 36px Arial";
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 10);
+  }
+
+  // メインの描画処理（これを何度も繰り返してアニメーションにする）
+  function draw() {
+    // 画面を一度クリアする
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    drawBricks();
+    drawBall();
+    drawPaddle();
+
+    let isClear = collisionDetection();
+    if (isClear) return; // クリアしたらゲームの動きを止める
+
+    // 左右の壁に当たったら跳ね返る
+    if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
+      dx = -dx;
+    }
+    
+    // 上の壁に当たったら跳ね返る
+    if (y + dy < ballRadius) {
+      dy = -dy;
+    } 
+    // 下に落ちた場合
+    else if (y + dy > canvas.height - ballRadius) {
+      // パドルに当たっていれば跳ね返る
+      if (x > paddleX && x < paddleX + paddleWidth) {
+        dy = -dy;
+      } else {
+        // パドルを外したらゲームオーバー
+        drawMessage("GAME OVER", "#c0392b");
+        return; // ゲームの動きを止める
+      }
+    }
+
+    // ボールを移動させる
+    x += dx;
+    y += dy;
+
+    // 次の画面の更新をリクエストする（ループ処理）
+    requestAnimationFrame(draw);
+  }
+
+  // ゲームスタート
+  draw();
+</script>
+
+</body>
+</html>

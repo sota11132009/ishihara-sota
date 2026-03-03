@@ -1,196 +1,165 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>ブロック崩し</title>
-  <style>
-    /* 画面の中央にゲームを配置し、背景を少し暗くします */
-    body {
-      margin: 0;
-      padding: 20px;
-      display: flex;
-      justify-content: center;
-      background-color: #2c3e50;
-    }
-    /* ゲーム画面（キャンバス）の見た目 */
-    canvas {
-      background-color: #ecf0f1;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>3Dアクション迷路</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Arial', sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; pointer-events: none; }
+    </style>
 </head>
 <body>
+    <div id="ui">
+        <h2>3D Maze Action</h2>
+        <p>移動: WASD / 矢印キー</p>
+        <p>ジャンプ: SPACE</p>
+        <p style="color: #fffa65;">注意: 動く敵に触れるな！</p>
+    </div>
 
-<canvas id="gameCanvas" width="480" height="320"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-<script>
-  // キャンバスの設定
-  const canvas = document.getElementById("gameCanvas");
-  const ctx = canvas.getContext("2d");
+    <script>
+        // --- 基本設定 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1e272e); // 暗めの空
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
 
-  // ボールの設定
-  let x = canvas.width / 2;
-  let y = canvas.height - 30;
-  let dx = 3; // ボールの横のスピード
-  let dy = -3; // ボールの縦のスピード
-  const ballRadius = 8;
+        const light = new THREE.PointLight(0xffffff, 1, 100);
+        light.position.set(10, 10, 10);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x404040));
 
-  // パドル（プレイヤーの板）の設定
-  const paddleHeight = 10;
-  const paddleWidth = 75;
-  let paddleX = (canvas.width - paddleWidth) / 2;
+        // --- 迷路データ ---
+        const mazeData = [
+            [1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,1,1,0,1],
+            [1,0,0,0,0,0,0,1,0,1],
+            [1,1,1,0,1,1,0,1,0,1],
+            [1,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,1,0,1,1,1,1],
+            [1,0,1,0,0,0,0,0,0,1],
+            [1,0,0,0,1,1,1,1,2,1],
+            [1,1,1,1,1,1,1,1,1,1],
+        ];
 
-  // ブロックの設定
-  const brickRowCount = 4; // 行数
-  const brickColumnCount = 6; // 列数
-  const brickWidth = 60;
-  const brickHeight = 20;
-  const brickPadding = 12;
-  const brickOffsetTop = 30;
-  const brickOffsetLeft = 30;
+        const wallSize = 2;
+        const walls = [];
+        let goalNode;
+        const enemies = [];
 
-  // カラフルなブロックの色（行ごとに色を変えます）
-  const colors = ["#e74c3c", "#f1c40f", "#2ecc71", "#9b59b6"];
+        mazeData.forEach((row, z) => {
+            row.forEach((cell, x) => {
+                const pos = { x: x * wallSize, y: wallSize / 2, z: z * wallSize };
+                if (cell === 1) {
+                    const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, wallSize, wallSize), new THREE.MeshStandardMaterial({ color: 0x485e74 }));
+                    wall.position.set(pos.x, pos.y, pos.z);
+                    scene.add(wall);
+                    walls.push(wall);
+                } else if (cell === 2) {
+                    goalNode = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 3, 32), new THREE.MeshStandardMaterial({ color: 0xff4757, emissive: 0xff0000 }));
+                    goalNode.position.set(pos.x, 1.5, pos.y); // y座標調整
+                    goalNode.position.y = 1.5;
+                    goalNode.position.z = z * wallSize;
+                    scene.add(goalNode);
+                }
+            });
+        });
 
-  // ブロックの配列を作成
-  const bricks = [];
-  for (let c = 0; c < brickColumnCount; c++) {
-    bricks[c] = [];
-    for (let r = 0; r < brickRowCount; r++) {
-      // status: 1はブロックが存在する、0は壊れた状態
-      bricks[c][r] = { x: 0, y: 0, status: 1, color: colors[r % colors.length] };
-    }
-  }
+        // 床
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x1a1a1a }));
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
 
-  // スコア（壊したブロックの数）
-  let score = 0;
+        // --- 敵の追加 ---
+        function createEnemy(x, z) {
+            const enemy = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xfffa65 }));
+            enemy.position.set(x * wallSize, 0.4, z * wallSize);
+            scene.add(enemy);
+            enemies.push({ mesh: enemy, startZ: z * wallSize, dir: 1 });
+        }
+        createEnemy(3, 5); // 敵1
+        createEnemy(7, 1); // 敵2
 
-  // マウス操作のイベントリスナー
-  document.addEventListener("mousemove", mouseMoveHandler, false);
+        // --- プレイヤー・物理設定 ---
+        camera.position.set(wallSize, 1.2, wallSize);
+        let velocityY = 0;
+        const gravity = -0.01;
+        const jumpPower = 0.2;
+        let isGrounded = true;
+        const keys = {};
 
-  function mouseMoveHandler(e) {
-    const rect = canvas.getBoundingClientRect();
-    const relativeX = e.clientX - rect.left;
-    if (relativeX > 0 && relativeX < canvas.width) {
-      // マウスの位置に合わせてパドルの中心を移動
-      paddleX = relativeX - paddleWidth / 2;
-    }
-  }
+        window.addEventListener('keydown', (e) => keys[e.code] = true);
+        window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-  // 衝突判定（ボールがブロックに当たったか）
-  function collisionDetection() {
-    for (let c = 0; c < brickColumnCount; c++) {
-      for (let r = 0; r < brickRowCount; r++) {
-        let b = bricks[c][r];
-        if (b.status == 1) {
-          // ボールがブロックの領域に入ったら
-          if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
-            dy = -dy; // ボールを跳ね返す
-            b.status = 0; // ブロックを消す
-            score++;
-            
-            // 全てのブロックを壊したらクリア
-            if (score === brickRowCount * brickColumnCount) {
-              drawMessage("GAME CLEAR!", "#27ae60");
-              return true; // クリアフラグを返す
+        // --- メインループ ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 1. 移動とジャンプの計算
+            const oldPos = camera.position.clone();
+            const moveSpeed = 0.08;
+
+            if (keys['KeyW'] || keys['ArrowUp']) camera.position.z -= moveSpeed;
+            if (keys['KeyS'] || keys['ArrowDown']) camera.position.z += moveSpeed;
+            if (keys['KeyA'] || keys['ArrowLeft']) camera.position.x -= moveSpeed;
+            if (keys['KeyD'] || keys['ArrowRight']) camera.position.x += moveSpeed;
+
+            // ジャンプ処理
+            if (keys['Space'] && isGrounded) {
+                velocityY = jumpPower;
+                isGrounded = false;
             }
-          }
+
+            velocityY += gravity;
+            camera.position.y += velocityY;
+
+            // 地面との接触
+            if (camera.position.y <= 1.2) {
+                camera.position.y = 1.2;
+                velocityY = 0;
+                isGrounded = true;
+            }
+
+            // 2. 壁との当たり判定
+            walls.forEach(wall => {
+                if (Math.abs(camera.position.x - wall.position.x) < 1.3 && 
+                    Math.abs(camera.position.z - wall.position.z) < 1.3 &&
+                    camera.position.y < 2.2) {
+                    camera.position.x = oldPos.x;
+                    camera.position.z = oldPos.z;
+                }
+            });
+
+            // 3. 敵の動きと当たり判定
+            enemies.forEach(enemy => {
+                enemy.mesh.position.z += 0.05 * enemy.dir;
+                if (Math.abs(enemy.mesh.position.z - enemy.startZ) > 4) enemy.dir *= -1;
+
+                if (camera.position.distanceTo(enemy.mesh.position) < 1.0) {
+                    alert("敵に捕まった！");
+                    resetPlayer();
+                }
+            });
+
+            // 4. ゴール判定
+            if (goalNode && camera.position.distanceTo(goalNode.position) < 1.2) {
+                alert("脱出成功！");
+                resetPlayer();
+            }
+
+            renderer.render(scene, camera);
         }
-      }
-    }
-    return false;
-  }
 
-  // ボールを描画する関数
-  function drawBall() {
-    ctx.beginPath();
-    ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
-    ctx.fillStyle = "#2980b9";
-    ctx.fill();
-    ctx.closePath();
-  }
-
-  // パドルを描画する関数
-  function drawPaddle() {
-    ctx.beginPath();
-    ctx.rect(paddleX, canvas.height - paddleHeight, paddleWidth, paddleHeight);
-    ctx.fillStyle = "#34495e";
-    ctx.fill();
-    ctx.closePath();
-  }
-
-  // ブロックを描画する関数
-  function drawBricks() {
-    for (let c = 0; c < brickColumnCount; c++) {
-      for (let r = 0; r < brickRowCount; r++) {
-        if (bricks[c][r].status == 1) {
-          let brickX = (c * (brickWidth + brickPadding)) + brickOffsetLeft;
-          let brickY = (r * (brickHeight + brickPadding)) + brickOffsetTop;
-          bricks[c][r].x = brickX;
-          bricks[c][r].y = brickY;
-          ctx.beginPath();
-          ctx.rect(brickX, brickY, brickWidth, brickHeight);
-          ctx.fillStyle = bricks[c][r].color;
-          ctx.fill();
-          ctx.closePath();
+        function resetPlayer() {
+            camera.position.set(wallSize, 1.2, wallSize);
+            velocityY = 0;
         }
-      }
-    }
-  }
 
-  // 画面中央に文字を表示する関数
-  function drawMessage(text, color) {
-    ctx.font = "bold 36px Arial";
-    ctx.fillStyle = color;
-    ctx.textAlign = "center";
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 10);
-  }
-
-  // メインの描画処理（これを何度も繰り返してアニメーションにする）
-  function draw() {
-    // 画面を一度クリアする
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    drawBricks();
-    drawBall();
-    drawPaddle();
-
-    let isClear = collisionDetection();
-    if (isClear) return; // クリアしたらゲームの動きを止める
-
-    // 左右の壁に当たったら跳ね返る
-    if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
-      dx = -dx;
-    }
-    
-    // 上の壁に当たったら跳ね返る
-    if (y + dy < ballRadius) {
-      dy = -dy;
-    } 
-    // 下に落ちた場合
-    else if (y + dy > canvas.height - ballRadius) {
-      // パドルに当たっていれば跳ね返る
-      if (x > paddleX && x < paddleX + paddleWidth) {
-        dy = -dy;
-      } else {
-        // パドルを外したらゲームオーバー
-        drawMessage("GAME OVER", "#c0392b");
-        return; // ゲームの動きを止める
-      }
-    }
-
-    // ボールを移動させる
-    x += dx;
-    y += dy;
-
-    // 次の画面の更新をリクエストする（ループ処理）
-    requestAnimationFrame(draw);
-  }
-
-  // ゲームスタート
-  draw();
-</script>
-
+        animate();
+    </script>
 </body>
 </html>

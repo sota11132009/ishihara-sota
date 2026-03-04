@@ -2,87 +2,128 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS迷路</title>
+    <title>3D Wide FPS Maze</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; }
-        #ui { position: absolute; top: 20px; left: 20px; color: white; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; pointer-events: none; }
-        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; pointer-events: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #00ff00; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; border: 1px solid #00ff00; pointer-events: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00ff00; font-size: 40px; pointer-events: none; font-weight: lighter; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h2>3D FPS MAZE</h2>
-        <p>画面クリックで開始 (Escで解除)</p>
-        <p>移動: WASD / 視点: マウス</p>
-        <p>ジャンプ: SPACE</p>
+        <h2 style="margin:0;">FPS BATTLE: WIDE ZONE</h2>
+        <p>移動: WASD / 視点: マウス / 攻撃: 左クリック / ジャンプ: SPACE</p>
+        <p>通路が広くなりました！敵の狙撃に注意せよ。</p>
     </div>
-    <div id="crosshair">+</div>
+    <div id="crosshair">＋</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        // --- 基本設定 ---
+        // --- 1. 基本設定 ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111111);
+        scene.background = new THREE.Color(0x020205);
+        scene.fog = new THREE.FogExp2(0x020205, 0.015); // 遠くを霞ませて巨大感を出す
+
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // --- 視点操作用の設定 ---
-        let lon = 0, lat = 0; // 経度と緯度（マウスの動き）
-        let phi = 0, theta = 0;
-        
-        // マウスロック（画面をクリックするとマウスが消えて操作可能になる）
-        document.body.addEventListener('click', () => {
-            document.body.requestPointerLock();
+        // --- 2. 視点操作 ---
+        let lon = 0, lat = 0;
+        document.body.addEventListener('mousedown', (e) => {
+            if (document.pointerLockElement !== document.body) {
+                document.body.requestPointerLock();
+            } else if (e.button === 0) {
+                fireBullet();
+            }
         });
 
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement === document.body) {
-                lon += e.movementX * 0.1;
-                lat -= e.movementY * 0.1;
-                lat = Math.max(-85, Math.min(85, lat)); // 上下を向きすぎないよう制限
+                lon += e.movementX * 0.15;
+                lat -= e.movementY * 0.15;
+                lat = Math.max(-85, Math.min(85, lat));
             }
         });
 
-        // --- 照明と地面 ---
-        scene.add(new THREE.AmbientLight(0x404040));
-        const light = new THREE.PointLight(0xffffff, 1, 50);
-        scene.add(light);
-
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-        floor.rotation.x = -Math.PI / 2;
-        scene.add(floor);
-
-        // --- 迷路生成 (前回のコードを流用) ---
+        // --- 3. 広大な迷路データ ---
         const mazeData = [
-            [1,1,1,1,1,1,1,1,1,1],
-            [1,0,0,0,1,0,0,0,0,1],
-            [1,0,1,0,1,0,1,1,0,1],
-            [1,0,1,0,0,0,0,1,0,1],
-            [1,0,1,1,1,1,0,1,0,1],
-            [1,0,0,0,0,1,0,0,0,1],
-            [1,1,1,1,0,1,1,1,0,1],
-            [1,0,0,0,0,0,0,1,0,1],
-            [1,0,1,1,1,1,0,0,2,1],
-            [1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,1,0,1,1,1,0,1],
+            [1,0,1,0,0,0,0,0,1,0,1],
+            [1,0,0,0,1,1,1,0,0,0,1],
+            [1,0,1,0,1,2,1,0,1,0,1],
+            [1,0,1,0,0,0,0,0,1,0,1],
+            [1,0,1,1,1,0,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1],
         ];
 
+        const wallSize = 8; // 【ここを大幅に広くしました】
         const walls = [];
+        const enemies = [];
+        const bullets = [];
+
         mazeData.forEach((row, z) => {
             row.forEach((cell, x) => {
+                const px = x * wallSize, pz = z * wallSize;
                 if (cell === 1) {
-                    const wall = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), new THREE.MeshStandardMaterial({ color: 0x34495e }));
-                    wall.position.set(x * 2, 2, z * 2);
+                    // 壁を高く、質感をメタル風に
+                    const wall = new THREE.Mesh(
+                        new THREE.BoxGeometry(wallSize, 12, wallSize), 
+                        new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.8, roughness: 0.2 })
+                    );
+                    wall.position.set(px, 6, pz);
                     scene.add(wall);
                     walls.push(wall);
+                } else if (cell === 0 && Math.random() < 0.1) {
+                    createEnemy(px, pz);
+                } else if (cell === 2) {
+                    const goal = new THREE.Mesh(
+                        new THREE.SphereGeometry(2, 32, 32), 
+                        new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x005555 })
+                    );
+                    goal.position.set(px, 3, pz);
+                    scene.add(goal);
                 }
             });
         });
 
-        // --- プレイヤー物理 ---
-        camera.position.set(2, 1.6, 2);
+        function createEnemy(x, z) {
+            const enemy = new THREE.Mesh(
+                new THREE.OctahedronGeometry(1.5), 
+                new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0x330000 })
+            );
+            enemy.position.set(x, 1.5, z);
+            scene.add(enemy);
+            enemies.push(enemy);
+        }
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({ color: 0x050505 }));
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        const light = new THREE.PointLight(0x00ff00, 1.5, 60);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x222222));
+
+        // --- 4. 弾の処理 ---
+        function fireBullet() {
+            const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+            bullet.position.copy(camera.position);
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            bullet.velocity = direction.multiplyScalar(1.5); // 弾速アップ
+            scene.add(bullet);
+            bullets.push(bullet);
+            setTimeout(() => { scene.remove(bullet); bullets.splice(bullets.indexOf(bullet), 1); }, 2000);
+        }
+
+        // --- 5. メインループ ---
+        camera.position.set(wallSize, 2, wallSize);
         const keys = {};
         let velocityY = 0;
         window.addEventListener('keydown', (e) => keys[e.code] = true);
@@ -91,43 +132,48 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // 1. 視点の更新
-            phi = THREE.MathUtils.degToRad(90 - lat);
-            theta = THREE.MathUtils.degToRad(lon);
-            const target = new THREE.Vector3();
-            target.setFromSphericalCoords(1, phi, theta).add(camera.position);
-            camera.lookAt(target);
-
-            // 2. 移動の計算 (向いている方向に合わせて移動)
             if (document.pointerLockElement === document.body) {
+                const phi = THREE.MathUtils.degToRad(90 - lat);
+                const theta = THREE.MathUtils.degToRad(lon);
+                const target = new THREE.Vector3();
+                target.setFromSphericalCoords(1, phi, theta).add(camera.position);
+                camera.lookAt(target);
+
                 const oldPos = camera.position.clone();
                 const forward = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta);
                 const right = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta + Math.PI/2);
                 
-                if (keys['KeyW']) camera.position.addScaledVector(forward, 0.1);
-                if (keys['KeyS']) camera.position.addScaledVector(forward, -0.1);
-                if (keys['KeyA']) camera.position.addScaledVector(right, -0.1);
-                if (keys['KeyD']) camera.position.addScaledVector(right, 0.1);
+                // 移動速度を 0.15 -> 0.25 にアップ
+                if (keys['KeyW']) camera.position.addScaledVector(forward, 0.25);
+                if (keys['KeyS']) camera.position.addScaledVector(forward, -0.25);
+                if (keys['KeyA']) camera.position.addScaledVector(right, -0.25);
+                if (keys['KeyD']) camera.position.addScaledVector(right, 0.25);
 
                 // ジャンプ
-                if (keys['Space'] && camera.position.y <= 1.61) velocityY = 0.15;
-                velocityY -= 0.008; // 重力
+                if (keys['Space'] && camera.position.y <= 2.1) velocityY = 0.3;
+                velocityY -= 0.015;
                 camera.position.y += velocityY;
-                if (camera.position.y < 1.6) { camera.position.y = 1.6; velocityY = 0; }
+                if (camera.position.y < 2) { camera.position.y = 2; velocityY = 0; }
 
-                // 壁判定
+                // 壁当たり判定（広くなった分、判定距離も調整）
                 walls.forEach(wall => {
-                    if (Math.abs(camera.position.x - wall.position.x) < 1.2 && 
-                        Math.abs(camera.position.z - wall.position.z) < 1.2) {
-                        camera.position.x = oldPos.x;
-                        camera.position.z = oldPos.z;
-                    }
+                    if (camera.position.distanceTo(wall.position) < (wallSize/2 + 1)) camera.position.copy(oldPos);
                 });
             }
 
-            // ライトを自分に追従させる
-            light.position.copy(camera.position);
+            bullets.forEach((bullet, bIdx) => {
+                bullet.position.add(bullet.velocity);
+                enemies.forEach((enemy, eIdx) => {
+                    if (bullet.position.distanceTo(enemy.position) < 2) {
+                        scene.remove(enemy);
+                        enemies.splice(eIdx, 1);
+                        scene.remove(bullet);
+                        bullets.splice(bIdx, 1);
+                    }
+                });
+            });
 
+            light.position.copy(camera.position);
             renderer.render(scene, camera);
         }
         animate();

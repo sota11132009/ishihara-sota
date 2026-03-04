@@ -2,163 +2,134 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3Dアクション迷路</title>
+    <title>3D FPS迷路</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Arial', sans-serif; }
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
         #ui { position: absolute; top: 20px; left: 20px; color: white; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; pointer-events: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; pointer-events: none; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h2>3D Maze Action</h2>
-        <p>移動: WASD / 矢印キー</p>
+        <h2>3D FPS MAZE</h2>
+        <p>画面クリックで開始 (Escで解除)</p>
+        <p>移動: WASD / 視点: マウス</p>
         <p>ジャンプ: SPACE</p>
-        <p style="color: #fffa65;">注意: 動く敵に触れるな！</p>
     </div>
+    <div id="crosshair">+</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
         // --- 基本設定 ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1e272e); // 暗めの空
+        scene.background = new THREE.Color(0x111111);
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        const light = new THREE.PointLight(0xffffff, 1, 100);
-        light.position.set(10, 10, 10);
-        scene.add(light);
-        scene.add(new THREE.AmbientLight(0x404040));
+        // --- 視点操作用の設定 ---
+        let lon = 0, lat = 0; // 経度と緯度（マウスの動き）
+        let phi = 0, theta = 0;
+        
+        // マウスロック（画面をクリックするとマウスが消えて操作可能になる）
+        document.body.addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
 
-        // --- 迷路データ ---
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === document.body) {
+                lon += e.movementX * 0.1;
+                lat -= e.movementY * 0.1;
+                lat = Math.max(-85, Math.min(85, lat)); // 上下を向きすぎないよう制限
+            }
+        });
+
+        // --- 照明と地面 ---
+        scene.add(new THREE.AmbientLight(0x404040));
+        const light = new THREE.PointLight(0xffffff, 1, 50);
+        scene.add(light);
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // --- 迷路生成 (前回のコードを流用) ---
         const mazeData = [
             [1,1,1,1,1,1,1,1,1,1],
-            [1,0,0,0,0,0,0,0,0,1],
-            [1,0,1,1,0,1,1,1,0,1],
+            [1,0,0,0,1,0,0,0,0,1],
+            [1,0,1,0,1,0,1,1,0,1],
+            [1,0,1,0,0,0,0,1,0,1],
+            [1,0,1,1,1,1,0,1,0,1],
+            [1,0,0,0,0,1,0,0,0,1],
+            [1,1,1,1,0,1,1,1,0,1],
             [1,0,0,0,0,0,0,1,0,1],
-            [1,1,1,0,1,1,0,1,0,1],
-            [1,0,0,0,0,0,0,0,0,1],
-            [1,0,1,1,1,0,1,1,1,1],
-            [1,0,1,0,0,0,0,0,0,1],
-            [1,0,0,0,1,1,1,1,2,1],
+            [1,0,1,1,1,1,0,0,2,1],
             [1,1,1,1,1,1,1,1,1,1],
         ];
 
-        const wallSize = 2;
         const walls = [];
-        let goalNode;
-        const enemies = [];
-
         mazeData.forEach((row, z) => {
             row.forEach((cell, x) => {
-                const pos = { x: x * wallSize, y: wallSize / 2, z: z * wallSize };
                 if (cell === 1) {
-                    const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, wallSize, wallSize), new THREE.MeshStandardMaterial({ color: 0x485e74 }));
-                    wall.position.set(pos.x, pos.y, pos.z);
+                    const wall = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 2), new THREE.MeshStandardMaterial({ color: 0x34495e }));
+                    wall.position.set(x * 2, 2, z * 2);
                     scene.add(wall);
                     walls.push(wall);
-                } else if (cell === 2) {
-                    goalNode = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 3, 32), new THREE.MeshStandardMaterial({ color: 0xff4757, emissive: 0xff0000 }));
-                    goalNode.position.set(pos.x, 1.5, pos.y); // y座標調整
-                    goalNode.position.y = 1.5;
-                    goalNode.position.z = z * wallSize;
-                    scene.add(goalNode);
                 }
             });
         });
 
-        // 床
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x1a1a1a }));
-        floor.rotation.x = -Math.PI / 2;
-        scene.add(floor);
-
-        // --- 敵の追加 ---
-        function createEnemy(x, z) {
-            const enemy = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xfffa65 }));
-            enemy.position.set(x * wallSize, 0.4, z * wallSize);
-            scene.add(enemy);
-            enemies.push({ mesh: enemy, startZ: z * wallSize, dir: 1 });
-        }
-        createEnemy(3, 5); // 敵1
-        createEnemy(7, 1); // 敵2
-
-        // --- プレイヤー・物理設定 ---
-        camera.position.set(wallSize, 1.2, wallSize);
-        let velocityY = 0;
-        const gravity = -0.01;
-        const jumpPower = 0.2;
-        let isGrounded = true;
+        // --- プレイヤー物理 ---
+        camera.position.set(2, 1.6, 2);
         const keys = {};
-
+        let velocityY = 0;
         window.addEventListener('keydown', (e) => keys[e.code] = true);
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-        // --- メインループ ---
         function animate() {
             requestAnimationFrame(animate);
 
-            // 1. 移動とジャンプの計算
-            const oldPos = camera.position.clone();
-            const moveSpeed = 0.08;
+            // 1. 視点の更新
+            phi = THREE.MathUtils.degToRad(90 - lat);
+            theta = THREE.MathUtils.degToRad(lon);
+            const target = new THREE.Vector3();
+            target.setFromSphericalCoords(1, phi, theta).add(camera.position);
+            camera.lookAt(target);
 
-            if (keys['KeyW'] || keys['ArrowUp']) camera.position.z -= moveSpeed;
-            if (keys['KeyS'] || keys['ArrowDown']) camera.position.z += moveSpeed;
-            if (keys['KeyA'] || keys['ArrowLeft']) camera.position.x -= moveSpeed;
-            if (keys['KeyD'] || keys['ArrowRight']) camera.position.x += moveSpeed;
+            // 2. 移動の計算 (向いている方向に合わせて移動)
+            if (document.pointerLockElement === document.body) {
+                const oldPos = camera.position.clone();
+                const forward = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta);
+                const right = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta + Math.PI/2);
+                
+                if (keys['KeyW']) camera.position.addScaledVector(forward, 0.1);
+                if (keys['KeyS']) camera.position.addScaledVector(forward, -0.1);
+                if (keys['KeyA']) camera.position.addScaledVector(right, -0.1);
+                if (keys['KeyD']) camera.position.addScaledVector(right, 0.1);
 
-            // ジャンプ処理
-            if (keys['Space'] && isGrounded) {
-                velocityY = jumpPower;
-                isGrounded = false;
+                // ジャンプ
+                if (keys['Space'] && camera.position.y <= 1.61) velocityY = 0.15;
+                velocityY -= 0.008; // 重力
+                camera.position.y += velocityY;
+                if (camera.position.y < 1.6) { camera.position.y = 1.6; velocityY = 0; }
+
+                // 壁判定
+                walls.forEach(wall => {
+                    if (Math.abs(camera.position.x - wall.position.x) < 1.2 && 
+                        Math.abs(camera.position.z - wall.position.z) < 1.2) {
+                        camera.position.x = oldPos.x;
+                        camera.position.z = oldPos.z;
+                    }
+                });
             }
 
-            velocityY += gravity;
-            camera.position.y += velocityY;
-
-            // 地面との接触
-            if (camera.position.y <= 1.2) {
-                camera.position.y = 1.2;
-                velocityY = 0;
-                isGrounded = true;
-            }
-
-            // 2. 壁との当たり判定
-            walls.forEach(wall => {
-                if (Math.abs(camera.position.x - wall.position.x) < 1.3 && 
-                    Math.abs(camera.position.z - wall.position.z) < 1.3 &&
-                    camera.position.y < 2.2) {
-                    camera.position.x = oldPos.x;
-                    camera.position.z = oldPos.z;
-                }
-            });
-
-            // 3. 敵の動きと当たり判定
-            enemies.forEach(enemy => {
-                enemy.mesh.position.z += 0.05 * enemy.dir;
-                if (Math.abs(enemy.mesh.position.z - enemy.startZ) > 4) enemy.dir *= -1;
-
-                if (camera.position.distanceTo(enemy.mesh.position) < 1.0) {
-                    alert("敵に捕まった！");
-                    resetPlayer();
-                }
-            });
-
-            // 4. ゴール判定
-            if (goalNode && camera.position.distanceTo(goalNode.position) < 1.2) {
-                alert("脱出成功！");
-                resetPlayer();
-            }
+            // ライトを自分に追従させる
+            light.position.copy(camera.position);
 
             renderer.render(scene, camera);
         }
-
-        function resetPlayer() {
-            camera.position.set(wallSize, 1.2, wallSize);
-            velocityY = 0;
-        }
-
         animate();
     </script>
 </body>

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS - Bright Desert Stage</title>
+    <title>3D FPS - Awesome Explosion Edition</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; width: 250px; z-index: 10; }
@@ -14,7 +14,6 @@
         #crosshair-container { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
         #crosshair { color: #e74c3c; font-size: 28px; font-weight: bold; }
 
-        /* 改良型レーダー */
         #radar-container {
             position: absolute; top: 20px; right: 20px;
             width: 160px; height: 160px; background: rgba(255,255,255,0.5);
@@ -49,7 +48,7 @@
 
     <script>
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87CEEB); // 美しい青空
+        scene.background = new THREE.Color(0x87CEEB);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -65,7 +64,6 @@
         const radarCtx = radarCanvas.getContext('2d');
         const radarSize = 160;
 
-        // --- 明るい砂漠迷路マップ ---
         const wallSize = 16;
         const mazeData = [
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
@@ -75,14 +73,14 @@
             [1,0,1,0,1,1,1,1,1,0,1,1,1,1,0,1],
             [1,0,0,0,1,3,0,0,0,0,1,0,0,0,0,1],
             [1,1,1,0,1,1,1,1,1,0,1,0,1,1,1,1],
-            [1,0,0,0,0,0,0,0,1,0,0,0,1,0,2,1], // 2: ゴール
+            [1,0,0,0,0,0,0,0,1,0,0,0,1,0,2,1],
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
         ];
 
         const walls = [], enemies = [], bullets = [], items = [];
         let goalPos = new THREE.Vector3();
 
-        const wallMat = new THREE.MeshStandardMaterial({ color: 0xedc9af }); // 砂の色
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xedc9af });
         const floorMat = new THREE.MeshStandardMaterial({ color: 0xd2b48c });
 
         mazeData.forEach((row, z) => {
@@ -124,7 +122,6 @@
             scene.add(enemy); enemies.push(enemy);
         }
 
-        // 明るい照明
         scene.add(new THREE.AmbientLight(0xffffff, 0.6));
         const sun = new THREE.DirectionalLight(0xffffff, 0.8);
         sun.position.set(50, 100, 50);
@@ -133,7 +130,6 @@
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), floorMat);
         floor.rotation.x = -Math.PI/2; scene.add(floor);
 
-        // イベント
         window.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'Space' && !isGameOver) fireBullet(); });
         window.addEventListener('keyup', (e) => keys[e.code] = false);
         document.body.addEventListener('click', () => { if(!isGameOver) document.body.requestPointerLock(); });
@@ -154,6 +150,39 @@
         }
 
         camera.position.set(wallSize, 3, wallSize);
+
+        // 爆発エフェクトを生成する関数
+        function createExplosion(position, color = 0xffa500, numParticles = 20) {
+            const explosionGroup = new THREE.Group();
+            scene.add(explosionGroup);
+
+            for (let i = 0; i < numParticles; i++) {
+                const particle = new THREE.Mesh(
+                    new THREE.SphereGeometry(Math.random() * 0.5 + 0.1),
+                    new THREE.MeshBasicMaterial({ color: color })
+                );
+                particle.position.copy(position);
+                
+                // 散らばる方向
+                particle.userData.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.5,
+                    (Math.random() - 0.5) * 0.5,
+                    (Math.random() - 0.5) * 0.5
+                );
+                explosionGroup.add(particle);
+            }
+
+            // 爆発の光
+            const light = new THREE.PointLight(0xffffff, 5, 10);
+            light.position.copy(position);
+            explosionGroup.add(light);
+            
+            // 少ししたら消す
+            setTimeout(() => {
+                scene.remove(explosionGroup);
+            }, 500); // 0.5秒で消滅
+        }
+
 
         function animate() {
             requestAnimationFrame(animate);
@@ -189,7 +218,6 @@
             }
             if (canMove) camera.position.copy(nextPos); else velocity.set(0,0,0);
 
-            // 敵の追跡
             enemies.forEach(e => {
                 const dist = e.position.distanceTo(camera.position);
                 if (dist < 50) {
@@ -207,7 +235,6 @@
                 walls.forEach(w => { if (e.position.distanceTo(w.position) < wallSize/1.7) e.userData.dir.reflect(new THREE.Vector3(1,0,1).normalize()); });
             });
 
-            // 回復アイテム
             items.forEach((it, i) => { 
                 it.rotation.y += 0.05;
                 if (camera.position.distanceTo(it.position) < 5) { 
@@ -220,7 +247,27 @@
 
             bullets.forEach((b, bi) => {
                 b.position.add(b.velocity);
-                enemies.forEach((e, ei) => { if (b.position.distanceTo(e.position) < 4) { scene.remove(e); enemies.splice(ei, 1); scene.remove(b); bullets.splice(bi, 1); } });
+                enemies.forEach((e, ei) => {
+                    if (b.position.distanceTo(e.position) < 4) {
+                        createExplosion(e.position.clone()); // ここで爆発エフェクトを呼び出し
+                        scene.remove(e); enemies.splice(ei, 1);
+                        scene.remove(b); bullets.splice(bi, 1);
+                    }
+                });
+            });
+
+            // 爆発パーティクルの動き
+            scene.children.forEach(obj => {
+                if (obj.isGroup && obj.children.length > 0 && obj.children[0].userData.velocity) {
+                    obj.children.forEach(particle => {
+                        particle.position.add(particle.userData.velocity);
+                        particle.userData.velocity.y -= 0.01; // 重力
+                        particle.material.opacity -= 0.02; // 徐々に薄く
+                        if (particle.material.opacity <= 0) {
+                            explosionGroup.remove(particle);
+                        }
+                    });
+                }
             });
 
             updateRadar();
@@ -240,13 +287,11 @@
             const centerX = radarSize / 2;
             const centerY = radarSize / 2;
 
-            // プレイヤー（中心の矢印風）
             radarCtx.fillStyle = '#3498db';
             radarCtx.beginPath();
             radarCtx.arc(centerX, centerY, 4, 0, Math.PI * 2);
             radarCtx.fill();
 
-            // 敵（赤）
             enemies.forEach(e => {
                 const rx = centerX + (e.position.x - camera.position.x) * scale;
                 const rz = centerY + (e.position.z - camera.position.z) * scale;
@@ -258,7 +303,6 @@
                 }
             });
 
-            // ゴール（金）
             const gx = centerX + (goalPos.x - camera.position.x) * scale;
             const gz = centerY + (goalPos.z - camera.position.z) * scale;
             if (Math.hypot(gx - centerX, gz - centerY) < radarSize/2) {

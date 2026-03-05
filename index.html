@@ -2,72 +2,76 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS - Reverse Control Edition</title>
+    <title>3D FPS - Solid Wall Edition</title>
     <style>
         body { margin: 0; overflow: hidden; background: #eee; font-family: sans-serif; }
         #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; }
         #score-board { font-size: 24px; color: #d35400; font-weight: bold; background: rgba(255,255,255,0.8); padding: 5px 15px; border-radius: 10px; }
         #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ff0000; font-size: 24px; pointer-events: none; }
-        #help { position: absolute; bottom: 20px; width: 100%; text-align: center; color: #666; font-size: 14px; background: rgba(255,255,255,0.5); }
+        #goal-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #f1c40f; font-size: 80px; font-weight: bold; text-shadow: 4px 4px #000; display: none; }
     </style>
 </head>
 <body>
-    <div id="ui">
-        <div id="score-board">SCORE: <span id="scoreVal">0</span></div>
-    </div>
+    <div id="ui"><div id="score-board">SCORE: <span id="scoreVal">0</span></div></div>
     <div id="crosshair">・</div>
-    <div id="help">クリックで開始 | 左右反転操作中 | スペースで攻撃</div>
+    <div id="goal-screen">GOAL!!</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xffffff);
-        scene.fog = new THREE.Fog(0xffffff, 10, 150);
-
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        let lon = 0, lat = 0;
+        let lon = 0, lat = 0, score = 0, isGoal = false;
         const velocity = new THREE.Vector3();
-        const friction = 0.7;
-        const accel = 0.15; // ゆっくり歩行
+        const accel = 0.05; 
+        const friction = 0.6;
         const keys = {};
 
         // --- 迷路構築 ---
         const wallSize = 16;
         const mazeData = [
-            [1,1,1,1,1,1,1,1,1,1,1,1],
-            [1,0,0,0,0,1,0,0,0,0,0,1],
-            [1,0,1,1,0,0,0,1,1,1,0,1],
-            [1,0,0,0,0,1,0,0,0,0,0,1],
-            [1,1,1,1,0,1,1,1,1,1,0,1],
-            [1,0,0,0,0,0,0,0,0,0,0,1],
-            [1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,1,0,0,0,1],
+            [1,0,1,1,0,0,0,1,0,1],
+            [1,0,0,0,0,1,0,2,0,1],
+            [1,1,1,1,1,1,1,1,1,1],
         ];
 
         const walls = [];
         const enemies = [];
         const bullets = [];
-        let score = 0;
+        let goalPos = new THREE.Vector3();
 
         mazeData.forEach((row, z) => {
             row.forEach((cell, x) => {
+                const px = x * wallSize, pz = z * wallSize;
                 if (cell === 1) {
-                    const wall = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallSize, 10, wallSize),
-                        new THREE.MeshStandardMaterial({ color: 0xcccccc })
-                    );
-                    wall.position.set(x * wallSize, 5, z * wallSize);
+                    const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, 10, wallSize), new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+                    wall.position.set(px, 5, pz);
                     scene.add(wall);
                     walls.push(wall);
+                } else if (cell === 2) {
+                    createFlag(px, pz);
+                    goalPos.set(px, 0, pz);
                 } else if (cell === 0 && Math.random() < 0.1 && (x > 1 || z > 1)) {
-                    spawnEnemy(x * wallSize, z * wallSize);
+                    spawnEnemy(px, pz);
                 }
             });
         });
+
+        function createFlag(x, z) {
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 12), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+            pole.position.set(x, 6, z);
+            scene.add(pole);
+            const flag = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 0.1), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+            flag.position.set(x + 2, 10, z);
+            scene.add(flag);
+        }
 
         function spawnEnemy(x, z) {
             const enemy = new THREE.Mesh(new THREE.SphereGeometry(1.5), new THREE.MeshStandardMaterial({ color: 0xff4444 }));
@@ -80,26 +84,15 @@
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshStandardMaterial({ color: 0xffffff }));
         floor.rotation.x = -Math.PI / 2;
         scene.add(floor);
-
-        const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
-        mainLight.position.set(10, 50, 10);
-        scene.add(mainLight);
         scene.add(new THREE.AmbientLight(0x999999));
+        scene.add(new THREE.DirectionalLight(0xffffff, 0.8));
 
-        // --- 操作イベント ---
-        window.addEventListener('keydown', (e) => { 
-            keys[e.code] = true; 
-            if(e.code === 'Space') fireBullet(); 
-        });
+        window.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'Space') fireBullet(); });
         window.addEventListener('keyup', (e) => keys[e.code] = false);
-
         document.body.addEventListener('click', () => document.body.requestPointerLock());
-
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement === document.body) {
-                // 【反転】マウスの動き(e.movementX)にマイナスを掛ける
-                lon -= e.movementX * 0.1; 
-                lat -= e.movementY * 0.1;
+                lon += e.movementX * 0.1; lat -= e.movementY * 0.1;
                 lat = Math.max(-85, Math.min(85, lat));
             }
         });
@@ -108,12 +101,11 @@
             const b = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
             b.position.copy(camera.position);
             const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
-            b.velocity = dir.multiplyScalar(1.2);
+            b.velocity = dir.multiplyScalar(0.8);
             scene.add(b); bullets.push(b);
             setTimeout(() => { scene.remove(b); bullets.splice(bullets.indexOf(b), 1); }, 2000);
         }
 
-        // --- メインループ ---
         camera.position.set(wallSize, 3, wallSize);
 
         function animate() {
@@ -121,34 +113,56 @@
 
             const theta = THREE.MathUtils.degToRad(lon);
             const phi = THREE.MathUtils.degToRad(90 - lat);
-            const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta).add(camera.position);
-            camera.lookAt(target);
+            camera.lookAt(new THREE.Vector3().setFromSphericalCoords(1, phi, theta).add(camera.position));
 
+            // 移動ベクトル計算
             const moveVec = new THREE.Vector3();
             const forward = new THREE.Vector3(Math.sin(theta), 0, Math.cos(theta));
             const side = new THREE.Vector3(Math.cos(theta), 0, -Math.sin(theta));
-
             if (keys['ArrowUp'] || keys['KeyW']) moveVec.add(forward);
             if (keys['ArrowDown'] || keys['KeyS']) moveVec.sub(forward);
-            
-            // 【反転】Leftキーでsideを足し(右へ)、Rightキーでsideを引く(左へ)
-            if (keys['ArrowLeft'] || keys['KeyA']) moveVec.add(side); 
-            if (keys['ArrowRight'] || keys['KeyD']) moveVec.sub(side); 
+            if (keys['ArrowLeft'] || keys['KeyA']) moveVec.sub(side); 
+            if (keys['ArrowRight'] || keys['KeyD']) moveVec.add(side); 
             
             moveVec.normalize();
             velocity.addScaledVector(moveVec, accel);
             velocity.multiplyScalar(friction);
 
+            // --- 鉄壁の当たり判定ロジック ---
             const oldPos = camera.position.clone();
-            camera.position.add(velocity);
+            const nextPos = camera.position.clone().add(velocity);
+            let canMove = true;
 
-            walls.forEach(w => {
-                if (camera.position.distanceTo(w.position) < wallSize/1.8) {
-                    camera.position.copy(oldPos);
-                    velocity.set(0,0,0);
+            // プレイヤーを点ではなく「半径3の円」として扱う
+            const playerRadius = 3.0; 
+
+            for (let w of walls) {
+                // AABB (Axis-Aligned Bounding Box) 判定の簡易版
+                const dx = Math.abs(nextPos.x - w.position.x);
+                const dz = Math.abs(nextPos.z - w.position.z);
+                
+                // 壁の半分の幅(wallSize/2) + プレイヤーの半径(playerRadius)
+                const limit = (wallSize / 2) + playerRadius;
+
+                if (dx < limit && dz < limit) {
+                    canMove = false;
+                    break;
                 }
-            });
+            }
 
+            if (canMove) {
+                camera.position.copy(nextPos);
+            } else {
+                velocity.set(0, 0, 0); // ぶつかったら即座に速度を殺す
+            }
+
+            // ゴール判定
+            if (!isGoal && camera.position.distanceTo(goalPos) < 6) {
+                isGoal = true;
+                document.getElementById('goal-screen').style.display = 'block';
+            }
+
+            // 弾と敵の更新
             bullets.forEach((b, bi) => {
                 b.position.add(b.velocity);
                 enemies.forEach((e, ei) => {
@@ -161,7 +175,7 @@
             });
 
             enemies.forEach(e => {
-                e.position.addScaledVector(e.userData.dir, 0.05);
+                e.position.addScaledVector(e.userData.dir, 0.02);
                 walls.forEach(w => { if (e.position.distanceTo(w.position) < wallSize/1.7) e.userData.dir.reflect(new THREE.Vector3(1,0,1).normalize()); });
             });
 

@@ -2,182 +2,219 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS Maze - Score Attack</title>
+    <title>3D Hyper Real Maze - Patrol</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #fff; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 5px; border: 1px solid #555; pointer-events: none; }
-        #score-board { position: absolute; top: 20px; right: 20px; color: #0f0; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 5px; border: 1px solid #0f0; font-size: 24px; pointer-events: none; }
-        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 30px; pointer-events: none; opacity: 0.7; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        #ui-top { position: absolute; top: 15px; left: 15px; color: #fff; text-shadow: 2px 2px 2px #000; pointer-events: none; }
+        #score-board { position: absolute; top: 15px; right: 15px; color: #0f0; font-size: 28px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.8); font-size: 30px; pointer-events: none; }
+        
+        /* 操作パネル */
+        #controls { position: absolute; bottom: 30px; left: 30px; display: grid; grid-template-columns: repeat(3, 70px); gap: 10px; }
+        .btn { width: 70px; height: 70px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; display: flex; justify-content: center; align-items: center; color: white; cursor: pointer; touch-action: none; font-size: 24px; }
+        .btn:active { background: rgba(255,255,255,0.3); }
+        .up { grid-column: 2; }
+        .left { grid-column: 1; grid-row: 2; }
+        .right { grid-column: 3; grid-row: 2; }
+        .down { grid-column: 2; grid-row: 3; }
+        #fire-btn { position: absolute; bottom: 40px; right: 40px; width: 120px; height: 120px; background: rgba(255, 0, 0, 0.3); border: 3px solid #f00; border-radius: 50%; color: white; font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; cursor: pointer; touch-action: none; box-shadow: 0 0 20px rgba(255,0,0,0.5); }
     </style>
 </head>
 <body>
-    <div id="ui">
-        <h2 style="margin:0; color: #aaa;">MISSION: EXTERMINATE</h2>
-        <p>WASD: 移動 / Mouse: 視点 / Click: 攻撃</p>
-    </div>
-    <div id="score-board">SCORE: <span id="scoreVal">0</span></div>
+    <div id="ui-top">ZONE: ABANDONED FACILITY</div>
+    <div id="score-board">PTS: <span id="scoreVal">0</span></div>
     <div id="crosshair">＋</div>
+
+    <div id="controls">
+        <div class="btn up" id="btn-W">▲</div>
+        <div class="btn left" id="btn-A">◀</div>
+        <div class="btn right" id="btn-D">▶</div>
+        <div class="btn down" id="btn-S">▼</div>
+    </div>
+    <div id="fire-btn">FIRE</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
+        // --- 基本設定 ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000); // 床と同じく背景も黒
-        scene.fog = new THREE.FogExp2(0x000000, 0.02);
+        scene.background = new THREE.Color(0x020202);
+        scene.fog = new THREE.FogExp2(0x020202, 0.012);
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        let score = 0;
-        const scoreDisp = document.getElementById("scoreVal");
+        // --- テクスチャ擬似生成（リアルに見せるため） ---
+        const createTexture = (color1, color2) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color1; ctx.fillRect(0,0,256,256);
+            ctx.strokeStyle = color2; ctx.lineWidth = 4;
+            for(let i=0; i<4; i++) ctx.strokeRect(i*64, i*64, 256, 256); // 模様
+            return new THREE.CanvasTexture(canvas);
+        };
+        const wallTex = createTexture('#333', '#444');
+        const floorTex = createTexture('#050505', '#111');
+        floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+        floorTex.repeat.set(50, 50);
 
-        // --- 視点操作 ---
-        let lon = 0, lat = 0;
-        document.body.addEventListener('mousedown', (e) => {
-            if (document.pointerLockElement !== document.body) {
-                document.body.requestPointerLock();
-            } else if (e.button === 0) {
-                fireBullet();
-            }
+        // --- 巨大な迷路構築 ---
+        const wallSize = 12; // 通路をさらに広く
+        const mazeData = [
+            [1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,1,0,1,1,1,0,1],
+            [1,0,0,0,1,0,1,0,0,0,1],
+            [1,1,1,0,0,0,0,0,1,1,1],
+            [1,0,1,1,1,0,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1],
+        ];
+
+        const walls = [];
+        const enemies = [];
+        const bullets = [];
+        let score = 0;
+
+        mazeData.forEach((row, z) => {
+            row.forEach((cell, x) => {
+                const px = x * wallSize, pz = z * wallSize;
+                if (cell === 1) {
+                    const wallGeo = new THREE.BoxGeometry(wallSize, 15, wallSize);
+                    const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.8 });
+                    const wall = new THREE.Mesh(wallGeo, wallMat);
+                    wall.position.set(px, 7.5, pz);
+                    scene.add(wall);
+                    walls.push(wall);
+                } else if (cell === 0 && Math.random() < 0.15 && (x > 1 || z > 1)) {
+                    spawnEnemy(px, pz);
+                }
+            });
         });
 
+        function spawnEnemy(x, z) {
+            const group = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.IcosahedronGeometry(2, 0), new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x330000 }));
+            group.add(body);
+            group.position.set(x, 3, z);
+            group.userData = { 
+                dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize(),
+                speed: 0.05 + Math.random() * 0.05 
+            };
+            scene.add(group);
+            enemies.push(group);
+        }
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ map: floorTex }));
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        const light = new THREE.PointLight(0xffffff, 1.5, 80);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x111111));
+
+        // --- 操作系 ---
+        const moveState = { w: false, a: false, s: false, d: false };
+        let lon = 0, lat = 0;
+
+        const setupBtn = (id, key) => {
+            const el = document.getElementById(id);
+            el.addEventListener('touchstart', (e) => { e.preventDefault(); moveState[key] = true; });
+            el.addEventListener('touchend', () => moveState[key] = false);
+            el.addEventListener('mousedown', () => moveState[key] = true);
+            el.addEventListener('mouseup', () => moveState[key] = false);
+        };
+        ['W','A','S','D'].forEach(k => setupBtn(`btn-${k}`, k.toLowerCase()));
+
+        document.getElementById('fire-btn').addEventListener('touchstart', (e) => { e.preventDefault(); fireBullet(); });
+        document.getElementById('fire-btn').addEventListener('mousedown', fireBullet);
+
+        let isDragging = false;
+        document.addEventListener('mousedown', () => isDragging = true);
+        document.addEventListener('mouseup', () => isDragging = false);
         document.addEventListener('mousemove', (e) => {
-            if (document.pointerLockElement === document.body) {
+            if (isDragging || document.pointerLockElement) {
                 lon += e.movementX * 0.15;
                 lat -= e.movementY * 0.15;
                 lat = Math.max(-85, Math.min(85, lat));
             }
         });
 
-        // --- 迷路設定 ---
-        const wallSize = 8;
-        const mazeData = [
-            [1,1,1,1,1,1,1,1,1,1],
-            [1,0,0,0,1,0,0,0,0,1],
-            [1,0,1,0,0,0,1,1,0,1],
-            [1,0,1,1,1,0,1,0,0,1],
-            [1,0,0,0,0,0,1,0,1,1],
-            [1,1,1,0,1,0,0,0,0,1],
-            [1,0,0,0,1,1,1,1,0,1],
-            [1,0,1,0,0,0,0,0,0,1],
-            [1,0,0,0,1,1,0,1,0,1],
-            [1,1,1,1,1,1,1,1,1,1],
-        ];
-
-        const walls = [];
-        const enemies = [];
-        const bullets = [];
-
-        mazeData.forEach((row, z) => {
-            row.forEach((cell, x) => {
-                const px = x * wallSize, pz = z * wallSize;
-                if (cell === 1) {
-                    // 壁の色を灰色 (0x808080) に設定
-                    const wall = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallSize, 10, wallSize), 
-                        new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.5 })
-                    );
-                    wall.position.set(px, 5, pz);
-                    scene.add(wall);
-                    walls.push(wall);
-                } else if (cell === 0 && Math.random() < 0.15) {
-                    createEnemy(px, pz);
-                }
-            });
-        });
-
-        function createEnemy(x, z) {
-            const enemy = new THREE.Mesh(
-                new THREE.OctahedronGeometry(1.5), 
-                new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x440000 })
-            );
-            enemy.position.set(x, 2, z);
-            scene.add(enemy);
-            enemies.push(enemy);
-        }
-
-        // 床の色を黒 (0x000000) に設定
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ color: 0x000000 }));
-        floor.rotation.x = -Math.PI / 2;
-        scene.add(floor);
-
-        const light = new THREE.PointLight(0xffffff, 1.2, 50); // 白いライト
-        scene.add(light);
-        scene.add(new THREE.AmbientLight(0x111111));
-
-        // --- 弾の発射 ---
         function fireBullet() {
-            const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0xfff000 }));
-            bullet.position.copy(camera.position);
-            const direction = new THREE.Vector3();
-            camera.getWorldDirection(direction);
-            bullet.velocity = direction.multiplyScalar(1.5);
-            scene.add(bullet);
-            bullets.push(bullet);
-            setTimeout(() => { 
-                scene.remove(bullet); 
-                if(bullets.indexOf(bullet) !== -1) bullets.splice(bullets.indexOf(bullet), 1); 
-            }, 2000);
+            const b = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
+            b.position.copy(camera.position);
+            const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+            b.velocity = dir.multiplyScalar(1.8);
+            scene.add(b); bullets.push(b);
+            setTimeout(() => { scene.remove(b); bullets.splice(bullets.indexOf(b), 1); }, 2000);
         }
 
         // --- メインループ ---
-        camera.position.set(wallSize, 2, wallSize);
-        const keys = {};
-        window.addEventListener('keydown', (e) => keys[e.code] = true);
-        window.addEventListener('keyup', (e) => keys[e.code] = false);
+        camera.position.set(0, 3, 0);
 
         function animate() {
             requestAnimationFrame(animate);
 
-            if (document.pointerLockElement === document.body) {
-                const theta = THREE.MathUtils.degToRad(lon);
-                const phi = THREE.MathUtils.degToRad(90 - lat);
-                const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta).add(camera.position);
-                camera.lookAt(target);
+            // 視点
+            const theta = THREE.MathUtils.degToRad(lon);
+            const phi = THREE.MathUtils.degToRad(90 - lat);
+            const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta).add(camera.position);
+            camera.lookAt(target);
 
-                const oldPos = camera.position.clone();
-                const forward = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta);
-                const right = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta + Math.PI/2);
-                
-                if (keys['KeyW']) camera.position.addScaledVector(forward, 0.25);
-                if (keys['KeyS']) camera.position.addScaledVector(forward, -0.25);
-                if (keys['KeyA']) camera.position.addScaledVector(right, -0.25);
-                if (keys['KeyD']) camera.position.addScaledVector(right, 0.25);
+            // プレイヤー移動
+            const oldPos = camera.position.clone();
+            const forward = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta);
+            const right = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta + Math.PI/2);
+            if (moveState.w) camera.position.addScaledVector(forward, 0.3);
+            if (moveState.s) camera.position.addScaledVector(forward, -0.3);
+            if (moveState.a) camera.position.addScaledVector(right, -0.3);
+            if (moveState.d) camera.position.addScaledVector(right, 0.3);
 
-                walls.forEach(wall => {
-                    if (camera.position.distanceTo(wall.position) < (wallSize/2 + 1)) camera.position.copy(oldPos);
-                });
-            }
+            walls.forEach(w => {
+                if (camera.position.distanceTo(w.position) < wallSize/1.8) camera.position.copy(oldPos);
+            });
 
-            // 弾の更新とスコア加算
-            bullets.forEach((bullet, bIdx) => {
-                bullet.position.add(bullet.velocity);
-                enemies.forEach((enemy, eIdx) => {
-                    if (bullet.position.distanceTo(enemy.position) < 2) {
-                        scene.remove(enemy);
-                        enemies.splice(eIdx, 1);
-                        scene.remove(bullet);
-                        bullets.splice(bIdx, 1);
-                        
-                        // スコア更新
-                        score += 100;
-                        scoreDisp.textContent = score;
+            // 敵の徘徊AI
+            enemies.forEach(e => {
+                const eOldPos = e.position.clone();
+                e.position.addScaledVector(e.userData.dir, e.userData.speed);
+                e.rotation.y += 0.02; e.rotation.x += 0.01;
+
+                // 壁にぶつかったら方向転換
+                walls.forEach(w => {
+                    if (e.position.distanceTo(w.position) < wallSize/1.5) {
+                        e.position.copy(eOldPos);
+                        e.userData.dir.applyAxisAngle(new THREE.Vector3(0,1,0), Math.random() * Math.PI);
                     }
                 });
             });
 
-            // 敵を少し回転させる演出
-            enemies.forEach(enemy => {
-                enemy.rotation.y += 0.05;
-                enemy.rotation.z += 0.02;
+            // 弾の当たり判定
+            bullets.forEach((b, bi) => {
+                b.position.add(b.velocity);
+                enemies.forEach((e, ei) => {
+                    if (b.position.distanceTo(e.position) < 3) {
+                        scene.remove(e); enemies.splice(ei, 1);
+                        scene.remove(b); bullets.splice(bi, 1);
+                        score += 100; document.getElementById("scoreVal").textContent = score;
+                    }
+                });
             });
 
             light.position.copy(camera.position);
             renderer.render(scene, camera);
         }
         animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>

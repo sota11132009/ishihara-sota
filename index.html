@@ -2,50 +2,36 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>ZOMBIE CITY - DAYLIGHT SURVIVAL</title>
+    <title>ZOMBIE CITY - SKY BLUE & SLOW ZOMBIES</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #87ceeb; font-family: 'Courier New', monospace; }
+        body { margin: 0; overflow: hidden; background: #87CEEB; font-family: 'Courier New', monospace; }
         
         /* UIレイアウト */
-        #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; z-index: 10; background: rgba(255,255,255,0.8); padding: 15px; border: 2px solid #000; border-radius: 8px; }
-        .bar-container { width: 220px; height: 15px; background: rgba(0,0,0,0.2); margin-bottom: 8px; border: 2px solid #000; }
-        #hp-bar { width: 100%; height: 100%; background: #ff3333; transition: width 0.3s; }
-        #stamina-bar { width: 100%; height: 100%; background: #33ff33; transition: width 0.1s; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; z-index: 10; background: rgba(255,255,255,0.9); padding: 15px; border: 3px solid #333; border-radius: 8px; }
+        .bar-container { width: 220px; height: 15px; background: rgba(0,0,0,0.1); margin-bottom: 8px; border: 2px solid #333; }
+        #hp-bar { width: 100%; height: 100%; background: #ff5252; transition: width 0.3s; }
+        #stamina-bar { width: 100%; height: 100%; background: #4caf50; transition: width 0.1s; }
         #ammo-ui { font-size: 26px; font-weight: bold; margin-top: 5px; color: #333; }
-        #score-ui { font-size: 20px; font-weight: bold; color: #555; }
         
-        /* 高性能レティクル（照準） */
-        #reticle {
-            position: absolute; top: 50%; left: 50%; width: 44px; height: 44px;
-            transform: translate(-50%, -50%); pointer-events: none; z-index: 20;
-        }
-        .reticle-line { position: absolute; background: #00ff00; transition: background 0.1s, transform 0.1s; }
+        /* 照準（ピンクで分かりやすく） */
+        #reticle { position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); pointer-events: none; z-index: 20; }
+        .reticle-line { position: absolute; background: #ff00ff; }
         .v-line { left: 21px; width: 2px; height: 12px; }
         .h-line { top: 21px; height: 2px; width: 12px; }
         #ret-top { top: 0; } #ret-bottom { bottom: 0; } #ret-left { left: 0; } #ret-right { right: 0; }
-        #ret-dot { position: absolute; top: 20px; left: 20px; width: 4px; height: 4px; background: #00ff00; border-radius: 50%; }
+        #ret-dot { position: absolute; top: 20px; left: 20px; width: 4px; height: 4px; background: #ff00ff; border-radius: 50%; }
 
-        /* ミニマップ */
-        #minimap { position: absolute; top: 20px; right: 20px; border: 3px solid #000; background: rgba(255,255,255,0.9); z-index: 10; border-radius: 4px; }
-        
-        /* ゲームオーバー画面 */
-        #overlay { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.85); display: none; flex-direction: column;
-            justify-content: center; align-items: center; color: white; z-index: 100;
-        }
-        #overlay h1 { font-size: 60px; margin-bottom: 20px; color: #ff0000; }
-        button { padding: 20px 50px; font-size: 28px; background: #ff0000; color: #fff; border: none; cursor: pointer; font-family: inherit; font-weight: bold; }
-        button:hover { background: #cc0000; }
-
-        #msg { position: absolute; bottom: 30px; width: 100%; text-align: center; color: #000; font-weight: bold; text-shadow: 1px 1px 0px #fff; font-size: 18px; }
+        #minimap { position: absolute; top: 20px; right: 20px; border: 3px solid #333; background: #fff; z-index: 10; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 100; }
+        button { padding: 20px 50px; font-size: 28px; background: #333; color: #fff; border: 3px solid #fff; cursor: pointer; }
+        #msg { position: absolute; bottom: 30px; width: 100%; text-align: center; color: #000; font-weight: bold; font-size: 18px; text-shadow: 1px 1px 2px white; }
     </style>
 </head>
 <body>
     <div id="ui">
         HP <div class="bar-container"><div id="hp-bar"></div></div>
         STAMINA <div class="bar-container"><div id="stamina-bar"></div></div>
-        <div id="ammo-ui"><span id="wp-name">Handgun</span>: <span id="ammo-cur">∞</span> / <span id="ammo-res">--</span></div>
+        <div id="ammo-ui"><span id="wp-name">Handgun</span>: <span id="ammo-cur">∞</span></div>
         <div id="score-ui">SCORE: <span id="score">0</span></div>
     </div>
 
@@ -58,153 +44,107 @@
     </div>
 
     <canvas id="minimap" width="160" height="160"></canvas>
-    
-    <div id="overlay">
-        <h1>YOU DIED</h1>
-        <button onclick="location.reload()">RETRY</button>
-    </div>
-
-    <div id="msg">CLICK TO START | [ARROW KEYS]:Move | [SPACE]:Shoot | [ENTER]:Weapon | [CTRL]:Reload</div>
+    <div id="overlay"><h1>GAME OVER</h1><button onclick="location.reload()">RETRY</button></div>
+    <div id="msg">クリックで開始 | 矢印キー:移動 | SPACE:射撃 | ENTER:武器変更 | CTRL:リロード</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        // --- 1. 世界の構築 ---
+        // --- 1. 世界の設定（空色と明るい光） ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xa0d8ef); // 澄んだ青空
-        scene.fog = new THREE.Fog(0xa0d8ef, 10, 120);
+        scene.background = new THREE.Color(0x87CEEB); // 鮮やかな空色
+        scene.fog = new THREE.Fog(0x87CEEB, 60, 250);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
+        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        // 明るい太陽光
-        const sunLight = new THREE.DirectionalLight(0xffffff, 1.3);
-        sunLight.position.set(40, 100, 40);
-        sunLight.castShadow = true;
-        sunLight.shadow.mapSize.width = 2048;
-        sunLight.shadow.mapSize.height = 2048;
-        sunLight.shadow.camera.left = -100;
-        sunLight.shadow.camera.right = 100;
-        sunLight.shadow.camera.top = 100;
-        sunLight.shadow.camera.bottom = -100;
-        scene.add(sunLight);
-        scene.add(new THREE.AmbientLight(0x707070));
+        // ライティング（非常に明るく）
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
+        scene.add(ambientLight);
 
-        // 地面
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshPhongMaterial({color: 0x666666}));
-        floor.rotation.x = -Math.PI/2; floor.receiveShadow = true;
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        sunLight.position.set(20, 60, 20);
+        scene.add(sunLight);
+
+        // 地面と建物
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshPhongMaterial({color: 0xcccccc}));
+        floor.rotation.x = -Math.PI/2;
         scene.add(floor);
 
-        // 街の生成
-        const MAP_SIZE = 400;
-        for(let i=0; i<120; i++) {
-            let x = (Math.random()-0.5)*MAP_SIZE, z = (Math.random()-0.5)*MAP_SIZE;
-            if(Math.abs(x) > 12 || Math.abs(z) > 12) {
-                const h = 8 + Math.random() * 30;
-                const b = new THREE.Mesh(new THREE.BoxGeometry(12, h, 12), new THREE.MeshPhongMaterial({color: 0xcccccc}));
-                b.position.set(x, h/2, z); b.castShadow = true; b.receiveShadow = true;
+        for(let i=0; i<60; i++) {
+            let x = (Math.random()-0.5)*400, z = (Math.random()-0.5)*400;
+            if(Math.abs(x) > 15 || Math.abs(z) > 15) {
+                const h = 5 + Math.random() * 25;
+                const b = new THREE.Mesh(new THREE.BoxGeometry(12, h, 12), new THREE.MeshPhongMaterial({color: 0xffffff}));
+                b.position.set(x, h/2, z);
                 scene.add(b);
             }
         }
 
-        // --- 2. プレイヤー・ゾンビ・アイテムのデータ ---
+        // --- 2. ゲームデータ（ゾンビを遅く） ---
         let hp = 100, stamina = 100, score = 0, isDead = false;
-        const zombies = [], bullets = [], items = [], keys = {};
+        const zombies = [], bullets = [], keys = {};
         
         const weapons = {
-            1: { name: "Handgun", ammo: Infinity, res: Infinity, cooldown: 350, spread: 0, count: 1, speed: 2.2 },
-            2: { name: "Shotgun", ammo: 8, res: 24, cooldown: 900, spread: 0.14, count: 7, speed: 1.8 },
-            3: { name: "SMG", ammo: 35, res: 105, cooldown: 95, spread: 0.05, count: 1, speed: 2.5 }
+            1: { name: "Handgun", ammo: Infinity, cooldown: 350, spread: 0, count: 1, speed: 2.5 },
+            2: { name: "Shotgun", ammo: 8, cooldown: 900, spread: 0.12, count: 6, speed: 2.0 },
+            3: { name: "SMG", ammo: 40, cooldown: 110, spread: 0.05, count: 1, speed: 2.8 }
         };
-        let wpIdx = 1, currentWp = weapons[wpIdx], lastShot = 0, isReloading = false;
+        let wpIdx = 1, currentWp = weapons[wpIdx], lastShot = 0;
 
         function spawnZombie() {
+            if (zombies.length >= 5) return; 
+
             const group = new THREE.Group();
-            const type = Math.random();
-            let config = { hp: 4, speed: 0.065, color: 0x2d4f1e, scale: 1 };
-            if(type > 0.85) config = { hp: 10, speed: 0.035, color: 0x5a1e1e, scale: 1.8 }; // 強敵
-            
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.6*config.scale, 1.2*config.scale, 0.4*config.scale), new THREE.MeshPhongMaterial({color: config.color}));
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.45*config.scale, 0.45*config.scale, 0.45*config.scale), new THREE.MeshPhongMaterial({color: 0x3d5d2d}));
-            head.position.y = 0.85 * config.scale;
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.4, 0.5), new THREE.MeshPhongMaterial({color: 0x4a7c44}));
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshPhongMaterial({color: 0x2d4d29}));
+            head.position.y = 1.0;
             group.add(body); group.add(head);
             
             const ang = Math.random()*Math.PI*2;
-            group.position.set(camera.position.x + Math.cos(ang)*45, 0.6*config.scale, camera.position.z + Math.sin(ang)*45);
-            group.userData = { ...config, flash: 0 };
-            zombies.push(group); scene.add(group);
+            const dist = 50 + Math.random()*20;
+            group.position.set(camera.position.x + Math.cos(ang)*dist, 0.7, camera.position.z + Math.sin(ang)*dist);
+            
+            // 速度を 0.02 まで低下（かなりゆっくり）
+            group.userData = { hp: 3, speed: 0.02, flash: 0 };
+            zombies.push(group);
+            scene.add(group);
         }
 
-        function spawnPickup(type) {
-            const item = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.7), new THREE.MeshPhongMaterial({color: type==='ammo'?0x00aaff:0x00ff00, emissive: type==='ammo'?0x003366:0x006600}));
-            item.position.set((Math.random()-0.5)*200, 0.25, (Math.random()-0.5)*200);
-            item.userData = { type };
-            items.push(item); scene.add(item);
-        }
+        for(let i=0; i<5; i++) spawnZombie();
 
-        for(let i=0; i<20; i++) spawnZombie();
-        for(let i=0; i<10; i++) { spawnPickup('ammo'); spawnPickup('hp'); }
-
-        // --- 3. コントロール & アクション ---
+        // --- 3. 操作ロジック ---
         window.addEventListener('keydown', e => { 
             keys[e.code] = true;
             if(e.code === 'Enter') { 
                 wpIdx = (wpIdx % 3) + 1; 
                 currentWp = weapons[wpIdx]; 
-                isReloading = false;
             }
-            if(e.code === 'ControlLeft' || e.code === 'ControlRight') reload();
         });
         window.addEventListener('keyup', e => keys[e.code] = false);
         document.body.addEventListener('click', () => { if(!isDead) document.body.requestPointerLock(); });
 
-        function hitFeedback() {
-            const lines = document.querySelectorAll('.reticle-line, #ret-dot');
-            lines.forEach(l => {
-                l.style.background = '#ff0000';
-                l.style.transform = 'scale(1.3)';
-            });
-            setTimeout(() => {
-                lines.forEach(l => {
-                    l.style.background = '#00ff00';
-                    l.style.transform = 'scale(1.0)';
-                });
-            }, 80);
-        }
-
         function shoot() {
             const now = Date.now();
-            if(isReloading || now - lastShot < currentWp.cooldown || currentWp.ammo === 0) return;
+            if(now - lastShot < currentWp.cooldown) return;
             lastShot = now;
-            if(currentWp.ammo !== Infinity) currentWp.ammo--;
 
             for(let i=0; i<currentWp.count; i++) {
-                const b = new THREE.Mesh(new THREE.SphereGeometry(0.08), new THREE.MeshBasicMaterial({color: 0x444444}));
+                const b = new THREE.Mesh(new THREE.SphereGeometry(0.12), new THREE.MeshBasicMaterial({color: 0x222222}));
                 b.position.copy(camera.position);
                 const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-                dir.x += (Math.random()-0.5)*currentWp.spread; dir.y += (Math.random()-0.5)*currentWp.spread;
+                dir.x += (Math.random()-0.5)*currentWp.spread;
                 b.userData.vel = dir.normalize().multiplyScalar(currentWp.speed);
                 bullets.push(b); scene.add(b);
             }
         }
 
-        function reload() {
-            if(isReloading || currentWp.ammo === Infinity || currentWp.res <= 0) return;
-            isReloading = true;
-            setTimeout(() => {
-                const max = (currentWp.name==="Shotgun"?8:35);
-                const take = Math.min(max - currentWp.ammo, currentWp.res);
-                currentWp.ammo += take; currentWp.res -= take;
-                isReloading = false;
-            }, 1000);
-        }
-
         let yaw = 0, pitch = 0;
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement === document.body) {
-                yaw -= e.movementX * 0.0022; pitch -= e.movementY * 0.0022;
+                yaw -= e.movementX * 0.0025; pitch -= e.movementY * 0.0025;
                 pitch = Math.max(-1.5, Math.min(1.5, pitch));
                 camera.rotation.set(pitch, yaw, 0, 'YXZ');
             }
@@ -216,9 +156,7 @@
             if(isDead) return;
             if(hp <= 0) { isDead = true; document.getElementById('overlay').style.display = 'flex'; document.exitPointerLock(); return; }
 
-            // 移動ロジック
-            let speed = keys['ShiftLeft'] && stamina > 0 ? 0.3 : 0.16;
-            if(keys['ShiftLeft'] && stamina > 0) stamina -= 0.8; else stamina = Math.min(100, stamina + 0.5);
+            let speed = keys['ShiftLeft'] ? 0.25 : 0.14;
             const move = new THREE.Vector3();
             if(keys['ArrowUp']) move.z -= 1; if(keys['ArrowDown']) move.z += 1;
             if(keys['ArrowLeft']) move.x -= 1; if(keys['ArrowRight']) move.x += 1;
@@ -227,50 +165,37 @@
 
             if(keys['Space']) shoot();
 
-            // ゾンビ処理
             zombies.forEach((z, zi) => {
-                const d = z.position.distanceTo(camera.position);
+                const dist = z.position.distanceTo(camera.position);
                 const dir = new THREE.Vector3().subVectors(camera.position, z.position).normalize();
                 z.position.add(dir.multiplyScalar(z.userData.speed));
                 z.rotation.y = Math.atan2(dir.x, dir.z);
-                if(d < 1.5) hp -= 0.7; // ダメージ
                 
-                bullets.forEach((b, bi) => {
-                    if(b.position.distanceTo(z.position) < 1.4) {
-                        z.userData.hp--; z.userData.flash = 5;
-                        hitFeedback();
-                        scene.remove(b); bullets.splice(bi, 1);
-                        if(z.userData.hp <= 0) { score += 200; scene.remove(z); zombies.splice(zi,1); spawnZombie(); }
+                if(dist < 1.6) hp -= 0.4;
+
+                bullets.forEach((bi_bullet, bi) => {
+                    if(bi_bullet.position.distanceTo(z.position) < 1.6) {
+                        z.userData.hp--;
+                        scene.remove(bi_bullet); bullets.splice(bi, 1);
+                        if(z.userData.hp <= 0) {
+                            score += 100; scene.remove(z); zombies.splice(zi,1);
+                            setTimeout(spawnZombie, 4000); // 新しい敵が出るまでの時間を少し長く
+                        }
                     }
                 });
-                z.children.forEach(c => c.material.emissive.setHex(z.userData.flash-- > 0 ? 0xff0000 : 0x000000));
             });
 
-            // アイテム取得
-            items.forEach((item, i) => {
-                if(item.position.distanceTo(camera.position) < 1.8) {
-                    if(item.userData.type === 'ammo') { weapons[2].res += 16; weapons[3].res += 35; }
-                    else hp = Math.min(100, hp + 50);
-                    scene.remove(item); items.splice(i, 1);
-                    setTimeout(() => spawnPickup(item.userData.type), 15000);
-                }
-            });
+            bullets.forEach((b, i) => { b.position.add(b.userData.vel); if(b.position.distanceTo(camera.position)>120){scene.remove(b); bullets.splice(i,1);} });
 
-            bullets.forEach((b, i) => { b.position.add(b.userData.vel); if(b.position.distanceTo(camera.position)>90){scene.remove(b); bullets.splice(i,1);} });
-
-            // UI更新
             document.getElementById('hp-bar').style.width = hp + "%";
             document.getElementById('stamina-bar').style.width = stamina + "%";
-            document.getElementById('ammo-cur').innerText = currentWp.ammo === Infinity ? "∞" : currentWp.ammo;
-            document.getElementById('ammo-res').innerText = currentWp.res === Infinity ? "--" : currentWp.res;
-            document.getElementById('wp-name').innerText = isReloading ? "RELOADING..." : currentWp.name;
+            document.getElementById('ammo-cur').innerText = currentWp.name + ": " + (currentWp.ammo === Infinity ? "∞" : currentWp.ammo);
             document.getElementById('score').innerText = score;
             
-            // ミニマップ
             const mctx = document.getElementById('minimap').getContext('2d');
             mctx.clearRect(0,0,160,160);
-            mctx.fillStyle="#0000ff"; mctx.fillRect(80+(camera.position.x/MAP_SIZE)*160, 80+(camera.position.z/MAP_SIZE)*160, 5, 5); // 自分
-            mctx.fillStyle="#ff0000"; zombies.forEach(z => mctx.fillRect(80+(z.position.x/MAP_SIZE)*160, 80+(z.position.z/MAP_SIZE)*160, 3, 3)); // ゾンビ
+            mctx.fillStyle="blue"; mctx.fillRect(80+(camera.position.x/400)*160, 80+(camera.position.z/400)*160, 6, 6);
+            mctx.fillStyle="red"; zombies.forEach(z => mctx.fillRect(80+(z.position.x/400)*160, 80+(z.position.z/400)*160, 4, 4));
 
             renderer.render(scene, camera);
         }

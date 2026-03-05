@@ -2,77 +2,59 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D Hyper Real Maze - Patrol</title>
+    <title>3D FPS - Arrow Key Edition</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
         #ui-top { position: absolute; top: 15px; left: 15px; color: #fff; text-shadow: 2px 2px 2px #000; pointer-events: none; }
         #score-board { position: absolute; top: 15px; right: 15px; color: #0f0; font-size: 28px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
         #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.8); font-size: 30px; pointer-events: none; }
-        
-        /* 操作パネル */
-        #controls { position: absolute; bottom: 30px; left: 30px; display: grid; grid-template-columns: repeat(3, 70px); gap: 10px; }
-        .btn { width: 70px; height: 70px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; display: flex; justify-content: center; align-items: center; color: white; cursor: pointer; touch-action: none; font-size: 24px; }
-        .btn:active { background: rgba(255,255,255,0.3); }
-        .up { grid-column: 2; }
-        .left { grid-column: 1; grid-row: 2; }
-        .right { grid-column: 3; grid-row: 2; }
-        .down { grid-column: 2; grid-row: 3; }
-        #fire-btn { position: absolute; bottom: 40px; right: 40px; width: 120px; height: 120px; background: rgba(255, 0, 0, 0.3); border: 3px solid #f00; border-radius: 50%; color: white; font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; cursor: pointer; touch-action: none; box-shadow: 0 0 20px rgba(255,0,0,0.5); }
+        #instructions { position: absolute; bottom: 20px; width: 100%; text-align: center; color: #aaa; pointer-events: none; }
     </style>
 </head>
 <body>
-    <div id="ui-top">ZONE: ABANDONED FACILITY</div>
+    <div id="ui-top">ZONE: ARROW KEY NAVIGATION</div>
     <div id="score-board">PTS: <span id="scoreVal">0</span></div>
     <div id="crosshair">＋</div>
-
-    <div id="controls">
-        <div class="btn up" id="btn-W">▲</div>
-        <div class="btn left" id="btn-A">◀</div>
-        <div class="btn right" id="btn-D">▶</div>
-        <div class="btn down" id="btn-S">▼</div>
-    </div>
-    <div id="fire-btn">FIRE</div>
+    <div id="instructions">画面をクリックして開始 | 矢印キーで移動 | スペースキーで攻撃</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        // --- 基本設定 ---
+        // --- 1. シーン・カメラ・レンダラー ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x020202);
-        scene.fog = new THREE.FogExp2(0x020202, 0.012);
+        scene.background = new THREE.Color(0x010101);
+        scene.fog = new THREE.FogExp2(0x010101, 0.015);
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1500);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        // --- テクスチャ擬似生成（リアルに見せるため） ---
+        // --- 2. テクスチャ生成 ---
         const createTexture = (color1, color2) => {
             const canvas = document.createElement('canvas');
-            canvas.width = 256; canvas.height = 256;
+            canvas.width = 128; canvas.height = 128;
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = color1; ctx.fillRect(0,0,256,256);
-            ctx.strokeStyle = color2; ctx.lineWidth = 4;
-            for(let i=0; i<4; i++) ctx.strokeRect(i*64, i*64, 256, 256); // 模様
+            ctx.fillStyle = color1; ctx.fillRect(0,0,128,128);
+            ctx.strokeStyle = color2; ctx.strokeRect(0,0,128,128);
             return new THREE.CanvasTexture(canvas);
         };
-        const wallTex = createTexture('#333', '#444');
-        const floorTex = createTexture('#050505', '#111');
+        const wallTex = createTexture('#222', '#333');
+        const floorTex = createTexture('#000', '#111');
         floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
-        floorTex.repeat.set(50, 50);
+        floorTex.repeat.set(100, 100);
 
-        // --- 巨大な迷路構築 ---
-        const wallSize = 12; // 通路をさらに広く
+        // --- 3. 迷路と敵 ---
+        const wallSize = 14; 
         const mazeData = [
-            [1,1,1,1,1,1,1,1,1,1,1],
-            [1,0,0,0,0,0,0,0,0,0,1],
-            [1,0,1,1,1,0,1,1,1,0,1],
-            [1,0,0,0,1,0,1,0,0,0,1],
-            [1,1,1,0,0,0,0,0,1,1,1],
-            [1,0,1,1,1,0,1,1,1,0,1],
-            [1,0,0,0,0,0,0,0,0,0,1],
-            [1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,1,0,0,0,1],
+            [1,0,1,1,0,0,0,1,0,1],
+            [1,0,1,0,0,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,1,1,0,1,0,1],
+            [1,0,0,0,0,0,0,1,0,1],
+            [1,1,1,1,1,1,1,1,1,1],
         ];
 
         const walls = [];
@@ -84,60 +66,47 @@
             row.forEach((cell, x) => {
                 const px = x * wallSize, pz = z * wallSize;
                 if (cell === 1) {
-                    const wallGeo = new THREE.BoxGeometry(wallSize, 15, wallSize);
-                    const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.8 });
-                    const wall = new THREE.Mesh(wallGeo, wallMat);
-                    wall.position.set(px, 7.5, pz);
+                    const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, 18, wallSize), new THREE.MeshStandardMaterial({ map: wallTex }));
+                    wall.position.set(px, 9, pz);
                     scene.add(wall);
                     walls.push(wall);
-                } else if (cell === 0 && Math.random() < 0.15 && (x > 1 || z > 1)) {
+                } else if (cell === 0 && Math.random() < 0.2 && (x > 1 || z > 1)) {
                     spawnEnemy(px, pz);
                 }
             });
         });
 
         function spawnEnemy(x, z) {
-            const group = new THREE.Group();
-            const body = new THREE.Mesh(new THREE.IcosahedronGeometry(2, 0), new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x330000 }));
-            group.add(body);
-            group.position.set(x, 3, z);
-            group.userData = { 
-                dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize(),
-                speed: 0.05 + Math.random() * 0.05 
-            };
-            scene.add(group);
-            enemies.push(group);
+            const enemy = new THREE.Mesh(new THREE.IcosahedronGeometry(2), new THREE.MeshStandardMaterial({ color: 0xff3300, emissive: 0x220000 }));
+            enemy.position.set(x, 3, z);
+            enemy.userData = { dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize(), speed: 0.1 };
+            scene.add(enemy);
+            enemies.push(enemy);
         }
 
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ map: floorTex }));
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshStandardMaterial({ map: floorTex }));
         floor.rotation.x = -Math.PI / 2;
         scene.add(floor);
-
-        const light = new THREE.PointLight(0xffffff, 1.5, 80);
+        const light = new THREE.PointLight(0xffffff, 1.8, 100);
         scene.add(light);
-        scene.add(new THREE.AmbientLight(0x111111));
+        scene.add(new THREE.AmbientLight(0x222222));
 
-        // --- 操作系 ---
-        const moveState = { w: false, a: false, s: false, d: false };
+        // --- 4. キーボード・視点操作 ---
+        const keys = {};
         let lon = 0, lat = 0;
 
-        const setupBtn = (id, key) => {
-            const el = document.getElementById(id);
-            el.addEventListener('touchstart', (e) => { e.preventDefault(); moveState[key] = true; });
-            el.addEventListener('touchend', () => moveState[key] = false);
-            el.addEventListener('mousedown', () => moveState[key] = true);
-            el.addEventListener('mouseup', () => moveState[key] = false);
-        };
-        ['W','A','S','D'].forEach(k => setupBtn(`btn-${k}`, k.toLowerCase()));
+        window.addEventListener('keydown', (e) => { 
+            keys[e.code] = true;
+            if (e.code === 'Space') fireBullet();
+        });
+        window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-        document.getElementById('fire-btn').addEventListener('touchstart', (e) => { e.preventDefault(); fireBullet(); });
-        document.getElementById('fire-btn').addEventListener('mousedown', fireBullet);
+        document.body.addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
 
-        let isDragging = false;
-        document.addEventListener('mousedown', () => isDragging = true);
-        document.addEventListener('mouseup', () => isDragging = false);
         document.addEventListener('mousemove', (e) => {
-            if (isDragging || document.pointerLockElement) {
+            if (document.pointerLockElement === document.body) {
                 lon += e.movementX * 0.15;
                 lat -= e.movementY * 0.15;
                 lat = Math.max(-85, Math.min(85, lat));
@@ -145,48 +114,48 @@
         });
 
         function fireBullet() {
-            const b = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
+            const b = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
             b.position.copy(camera.position);
             const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
-            b.velocity = dir.multiplyScalar(1.8);
+            b.velocity = dir.multiplyScalar(2.0);
             scene.add(b); bullets.push(b);
             setTimeout(() => { scene.remove(b); bullets.splice(bullets.indexOf(b), 1); }, 2000);
         }
 
-        // --- メインループ ---
-        camera.position.set(0, 3, 0);
+        // --- 5. メインループ ---
+        camera.position.set(wallSize, 3, wallSize);
 
         function animate() {
             requestAnimationFrame(animate);
 
-            // 視点
+            // 視点更新
             const theta = THREE.MathUtils.degToRad(lon);
             const phi = THREE.MathUtils.degToRad(90 - lat);
             const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta).add(camera.position);
             camera.lookAt(target);
 
-            // プレイヤー移動
+            // 移動 (矢印キー対応)
             const oldPos = camera.position.clone();
             const forward = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta);
             const right = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta + Math.PI/2);
-            if (moveState.w) camera.position.addScaledVector(forward, 0.3);
-            if (moveState.s) camera.position.addScaledVector(forward, -0.3);
-            if (moveState.a) camera.position.addScaledVector(right, -0.3);
-            if (moveState.d) camera.position.addScaledVector(right, 0.3);
+            
+            if (keys['ArrowUp'] || keys['KeyW']) camera.position.addScaledVector(forward, 0.35);
+            if (keys['ArrowDown'] || keys['KeyS']) camera.position.addScaledVector(forward, -0.35);
+            if (keys['ArrowLeft'] || keys['KeyA']) camera.position.addScaledVector(right, -0.35);
+            if (keys['ArrowRight'] || keys['KeyD']) camera.position.addScaledVector(right, 0.35);
 
+            // 壁当たり判定
             walls.forEach(w => {
                 if (camera.position.distanceTo(w.position) < wallSize/1.8) camera.position.copy(oldPos);
             });
 
-            // 敵の徘徊AI
+            // 敵の徘徊
             enemies.forEach(e => {
                 const eOldPos = e.position.clone();
                 e.position.addScaledVector(e.userData.dir, e.userData.speed);
-                e.rotation.y += 0.02; e.rotation.x += 0.01;
-
-                // 壁にぶつかったら方向転換
+                e.rotation.y += 0.05;
                 walls.forEach(w => {
-                    if (e.position.distanceTo(w.position) < wallSize/1.5) {
+                    if (e.position.distanceTo(w.position) < wallSize/1.6) {
                         e.position.copy(eOldPos);
                         e.userData.dir.applyAxisAngle(new THREE.Vector3(0,1,0), Math.random() * Math.PI);
                     }

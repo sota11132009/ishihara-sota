@@ -2,59 +2,52 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS - Arrow Key Edition</title>
+    <title>3D FPS - Keyboard Only</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        #ui-top { position: absolute; top: 15px; left: 15px; color: #fff; text-shadow: 2px 2px 2px #000; pointer-events: none; }
-        #score-board { position: absolute; top: 15px; right: 15px; color: #0f0; font-size: 28px; font-weight: bold; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
-        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.8); font-size: 30px; pointer-events: none; }
-        #instructions { position: absolute; bottom: 20px; width: 100%; text-align: center; color: #aaa; pointer-events: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        /* 画面上の矢印UIを削除し、スコアのみ残しました */
+        #ui { position: absolute; top: 20px; left: 20px; color: #fff; pointer-events: none; }
+        #score-board { font-size: 24px; color: #0f0; font-weight: bold; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 24px; pointer-events: none; opacity: 0.8; }
+        #help { position: absolute; bottom: 20px; width: 100%; text-align: center; color: #444; font-size: 12px; }
     </style>
 </head>
 <body>
-    <div id="ui-top">ZONE: ARROW KEY NAVIGATION</div>
-    <div id="score-board">PTS: <span id="scoreVal">0</span></div>
+    <div id="ui">
+        <div id="score-board">SCORE: <span id="scoreVal">0</span></div>
+    </div>
     <div id="crosshair">＋</div>
-    <div id="instructions">画面をクリックして開始 | 矢印キーで移動 | スペースキーで攻撃</div>
+    <div id="help">クリックして操作開始 | 矢印キーで移動 | スペースで攻撃 | Escで解除</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        // --- 1. シーン・カメラ・レンダラー ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x010101);
-        scene.fog = new THREE.FogExp2(0x010101, 0.015);
+        scene.background = new THREE.Color(0x000000);
+        scene.fog = new THREE.FogExp2(0x000000, 0.012);
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1500);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // --- 2. テクスチャ生成 ---
-        const createTexture = (color1, color2) => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128; canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = color1; ctx.fillRect(0,0,128,128);
-            ctx.strokeStyle = color2; ctx.strokeRect(0,0,128,128);
-            return new THREE.CanvasTexture(canvas);
-        };
-        const wallTex = createTexture('#222', '#333');
-        const floorTex = createTexture('#000', '#111');
-        floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
-        floorTex.repeat.set(100, 100);
+        // --- パラメータ調整（ヌルヌル動く設定） ---
+        let lon = 0, lat = 0;
+        const velocity = new THREE.Vector3();
+        const friction = 0.8; // 摩擦（ブレーキの強さ）
+        const accel = 0.4;    // 加速の速さ
+        const keys = {};
 
-        // --- 3. 迷路と敵 ---
-        const wallSize = 14; 
+        // --- 迷路構築（巨大・リアル配色） ---
+        const wallSize = 15;
         const mazeData = [
-            [1,1,1,1,1,1,1,1,1,1],
-            [1,0,0,0,0,1,0,0,0,1],
-            [1,0,1,1,0,0,0,1,0,1],
-            [1,0,1,0,0,1,1,1,0,1],
-            [1,0,0,0,0,0,0,0,0,1],
-            [1,0,1,1,1,1,0,1,0,1],
-            [1,0,0,0,0,0,0,1,0,1],
-            [1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,1,0,0,0,0,0,1],
+            [1,0,1,1,0,0,0,1,1,1,0,1],
+            [1,0,0,0,0,1,0,0,0,0,0,1],
+            [1,1,1,1,0,1,1,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1],
         ];
 
         const walls = [];
@@ -64,57 +57,57 @@
 
         mazeData.forEach((row, z) => {
             row.forEach((cell, x) => {
-                const px = x * wallSize, pz = z * wallSize;
                 if (cell === 1) {
-                    const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, 18, wallSize), new THREE.MeshStandardMaterial({ map: wallTex }));
-                    wall.position.set(px, 9, pz);
+                    const wall = new THREE.Mesh(
+                        new THREE.BoxGeometry(wallSize, 15, wallSize),
+                        new THREE.MeshStandardMaterial({ color: 0x222222 }) // 濃い灰色
+                    );
+                    wall.position.set(x * wallSize, 7.5, z * wallSize);
                     scene.add(wall);
                     walls.push(wall);
-                } else if (cell === 0 && Math.random() < 0.2 && (x > 1 || z > 1)) {
-                    spawnEnemy(px, pz);
+                } else if (cell === 0 && Math.random() < 0.1 && (x > 1 || z > 1)) {
+                    spawnEnemy(x * wallSize, z * wallSize);
                 }
             });
         });
 
         function spawnEnemy(x, z) {
-            const enemy = new THREE.Mesh(new THREE.IcosahedronGeometry(2), new THREE.MeshStandardMaterial({ color: 0xff3300, emissive: 0x220000 }));
+            const enemy = new THREE.Mesh(new THREE.IcosahedronGeometry(2), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
             enemy.position.set(x, 3, z);
-            enemy.userData = { dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize(), speed: 0.1 };
+            enemy.userData = { dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize() };
             scene.add(enemy);
             enemies.push(enemy);
         }
 
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshStandardMaterial({ map: floorTex }));
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshStandardMaterial({ color: 0x000000 }));
         floor.rotation.x = -Math.PI / 2;
         scene.add(floor);
-        const light = new THREE.PointLight(0xffffff, 1.8, 100);
+        const light = new THREE.PointLight(0xffffff, 1.5, 100);
         scene.add(light);
         scene.add(new THREE.AmbientLight(0x222222));
 
-        // --- 4. キーボード・視点操作 ---
-        const keys = {};
-        let lon = 0, lat = 0;
-
+        // --- 操作イベント ---
         window.addEventListener('keydown', (e) => { 
-            keys[e.code] = true;
-            if (e.code === 'Space') fireBullet();
+            keys[e.code] = true; 
+            if(e.code === 'Space') fireBullet(); 
         });
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
+        // 画面をクリックしたらマウス固定
         document.body.addEventListener('click', () => {
             document.body.requestPointerLock();
         });
 
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement === document.body) {
-                lon += e.movementX * 0.15;
-                lat -= e.movementY * 0.15;
+                lon += e.movementX * 0.1;
+                lat -= e.movementY * 0.1;
                 lat = Math.max(-85, Math.min(85, lat));
             }
         });
 
         function fireBullet() {
-            const b = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
+            const b = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
             b.position.copy(camera.position);
             const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
             b.velocity = dir.multiplyScalar(2.0);
@@ -122,7 +115,7 @@
             setTimeout(() => { scene.remove(b); bullets.splice(bullets.indexOf(b), 1); }, 2000);
         }
 
-        // --- 5. メインループ ---
+        // --- メインループ ---
         camera.position.set(wallSize, 3, wallSize);
 
         function animate() {
@@ -134,35 +127,32 @@
             const target = new THREE.Vector3().setFromSphericalCoords(1, phi, theta).add(camera.position);
             camera.lookAt(target);
 
-            // 移動 (矢印キー対応)
-            const oldPos = camera.position.clone();
-            const forward = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta);
-            const right = new THREE.Vector3().setFromSphericalCoords(1, Math.PI/2, theta + Math.PI/2);
+            // 移動計算（物理慣性）
+            const moveVec = new THREE.Vector3();
+            const forward = new THREE.Vector3(Math.sin(theta), 0, Math.cos(theta));
+            const side = new THREE.Vector3(Math.cos(theta), 0, -Math.sin(theta));
+
+            if (keys['ArrowUp'] || keys['KeyW']) moveVec.add(forward);
+            if (keys['ArrowDown'] || keys['KeyS']) moveVec.sub(forward);
+            if (keys['ArrowLeft'] || keys['KeyA']) moveVec.sub(side);
+            if (keys['ArrowRight'] || keys['KeyD']) moveVec.add(side);
             
-            if (keys['ArrowUp'] || keys['KeyW']) camera.position.addScaledVector(forward, 0.35);
-            if (keys['ArrowDown'] || keys['KeyS']) camera.position.addScaledVector(forward, -0.35);
-            if (keys['ArrowLeft'] || keys['KeyA']) camera.position.addScaledVector(right, -0.35);
-            if (keys['ArrowRight'] || keys['KeyD']) camera.position.addScaledVector(right, 0.35);
+            moveVec.normalize();
+            velocity.addScaledVector(moveVec, accel);
+            velocity.multiplyScalar(friction);
+
+            const oldPos = camera.position.clone();
+            camera.position.add(velocity);
 
             // 壁当たり判定
             walls.forEach(w => {
-                if (camera.position.distanceTo(w.position) < wallSize/1.8) camera.position.copy(oldPos);
+                if (camera.position.distanceTo(w.position) < wallSize/1.7) {
+                    camera.position.copy(oldPos);
+                    velocity.set(0,0,0);
+                }
             });
 
-            // 敵の徘徊
-            enemies.forEach(e => {
-                const eOldPos = e.position.clone();
-                e.position.addScaledVector(e.userData.dir, e.userData.speed);
-                e.rotation.y += 0.05;
-                walls.forEach(w => {
-                    if (e.position.distanceTo(w.position) < wallSize/1.6) {
-                        e.position.copy(eOldPos);
-                        e.userData.dir.applyAxisAngle(new THREE.Vector3(0,1,0), Math.random() * Math.PI);
-                    }
-                });
-            });
-
-            // 弾の当たり判定
+            // 弾と敵の更新
             bullets.forEach((b, bi) => {
                 b.position.add(b.velocity);
                 enemies.forEach((e, ei) => {
@@ -174,16 +164,15 @@
                 });
             });
 
+            enemies.forEach(e => {
+                e.position.addScaledVector(e.userData.dir, 0.1);
+                walls.forEach(w => { if (e.position.distanceTo(w.position) < wallSize/1.6) e.userData.dir.reflect(new THREE.Vector3(1,0,1).normalize()); });
+            });
+
             light.position.copy(camera.position);
             renderer.render(scene, camera);
         }
         animate();
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
     </script>
 </body>
 </html>

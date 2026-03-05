@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS - Shadows Edition</title>
+    <title>3D FPS - Doll Enemies Edition</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; width: 250px; z-index: 10; }
@@ -55,9 +55,8 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // 影の設定を有効化
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // ソフトな影
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         let lon = 0, lat = 0, hp = 100, stamina = 100, isGameOver = false;
         const velocity = new THREE.Vector3();
@@ -93,8 +92,8 @@
                 if (cell === 1) {
                     const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, 10, wallSize), wallMat);
                     wall.position.set(px, 5, pz);
-                    wall.receiveShadow = true; // 壁が影を受け取る
-                    wall.castShadow = true;    // 壁が影を落とす
+                    wall.receiveShadow = true;
+                    wall.castShadow = true;
                     scene.add(wall); walls.push(wall);
                 } else if (cell === 2) {
                     createFlag(px, pz); goalPos.set(px, 0, pz);
@@ -129,21 +128,83 @@
             scene.add(flag);
         }
 
+        // 敵の人形モデルを生成する関数
+        function createDollEnemy() {
+            const group = new THREE.Group();
+            const enemyColor = new THREE.Color(0xc0392b); // 敵の基本的な色
+
+            // ボディ (カプセル形状を表現するために円柱と球を組み合わせる)
+            const bodyHeight = 2.5;
+            const bodyRadius = 1;
+            const bodyCylinder = new THREE.Mesh(
+                new THREE.CylinderGeometry(bodyRadius, bodyRadius, bodyHeight, 16),
+                new THREE.MeshStandardMaterial({ color: enemyColor })
+            );
+            bodyCylinder.position.y = bodyHeight / 2; // 中心を合わせる
+
+            const bodyTopSphere = new THREE.Mesh(
+                new THREE.SphereGeometry(bodyRadius, 16, 16),
+                new THREE.MeshStandardMaterial({ color: enemyColor })
+            );
+            bodyTopSphere.position.y = bodyHeight;
+
+            const bodyBottomSphere = new THREE.Mesh(
+                new THREE.SphereGeometry(bodyRadius, 16, 16),
+                new THREE.MeshStandardMaterial({ color: enemyColor })
+            );
+            bodyBottomSphere.position.y = 0;
+
+            group.add(bodyCylinder, bodyTopSphere, bodyBottomSphere);
+
+            // 目
+            const eyeGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 }); // 黒目
+
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(-0.5, bodyHeight * 0.75, bodyRadius + 0.1);
+            group.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(0.5, bodyHeight * 0.75, bodyRadius + 0.1);
+            group.add(rightEye);
+
+            // 手 (腕)
+            const armRadius = 0.5;
+            const armMaterial = new THREE.MeshStandardMaterial({ color: enemyColor });
+
+            const leftArm = new THREE.Mesh(new THREE.SphereGeometry(armRadius), armMaterial);
+            leftArm.position.set(-(bodyRadius + armRadius + 0.1), bodyHeight * 0.5, 0);
+            group.add(leftArm);
+
+            const rightArm = new THREE.Mesh(new THREE.SphereGeometry(armRadius), armMaterial);
+            rightArm.position.set(bodyRadius + armRadius + 0.1, bodyHeight * 0.5, 0);
+            group.add(rightArm);
+
+            // 全ての子オブジェクトに影の設定を適用
+            group.children.forEach(child => {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            });
+
+            group.scale.set(0.8, 0.8, 0.8); // 全体のサイズを調整
+            group.position.y = 1.8; // 地面から浮かないように調整
+            return group;
+        }
+
+
         function spawnEnemy(x, z) {
-            const enemy = new THREE.Mesh(new THREE.SphereGeometry(1.8), new THREE.MeshStandardMaterial({ color: 0xc0392b }));
-            enemy.position.set(x, 1.8, z);
-            enemy.userData = { dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize() };
-            enemy.castShadow = true; // 敵が影を落とす
-            scene.add(enemy); enemies.push(enemy);
+            const enemyGroup = createDollEnemy();
+            enemyGroup.position.set(x, 1.8, z); // spawnEnemyのposition.yと合わせる
+            enemyGroup.userData = { dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize() };
+            scene.add(enemyGroup); enemies.push(enemyGroup);
         }
 
         scene.add(new THREE.AmbientLight(0xffffff, 0.6));
         const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-        sun.position.set(50, 100, 50); // 太陽の位置
-        sun.castShadow = true; // 太陽が影を生成する
+        sun.position.set(50, 100, 50);
+        sun.castShadow = true;
 
-        // DirectionalLightの影の設定
-        sun.shadow.mapSize.width = 1024;  // 影の解像度
+        sun.shadow.mapSize.width = 1024;
         sun.shadow.mapSize.height = 1024;
         sun.shadow.camera.near = 0.5;
         sun.shadow.camera.far = 200;
@@ -156,7 +217,7 @@
 
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), floorMat);
         floor.rotation.x = -Math.PI/2; 
-        floor.receiveShadow = true; // 地面が影を受け取る
+        floor.receiveShadow = true;
         scene.add(floor);
 
         window.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'Space' && !isGameOver) fireBullet(); });
@@ -287,7 +348,7 @@
                         particle.userData.velocity.y -= 0.01;
                         particle.material.opacity -= 0.02;
                         if (particle.material.opacity <= 0) {
-                            if (obj.children.length === 1) scene.remove(obj); // グループから最後のパーティクルが消えたらグループも削除
+                            if (obj.children.length === 1) scene.remove(obj);
                         }
                     });
                 }

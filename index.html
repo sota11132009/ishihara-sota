@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS - Enemy Radar Edition</title>
+    <title>3D FPS - Radar & Night Stage</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; width: 250px; z-index: 10; }
@@ -13,8 +13,15 @@
         
         #crosshair-container { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
         #crosshair { color: #ff0000; font-size: 24px; text-align: center; }
-        /* 警告マーク用 */
-        .warning-mark { position: absolute; color: #f39c12; font-size: 30px; font-weight: bold; pointer-events: none; white-space: nowrap; text-shadow: 1px 1px 2px #000; }
+
+        /* ミニマップレーダー */
+        #radar-container {
+            position: absolute; top: 20px; right: 20px;
+            width: 150px; height: 150px; background: rgba(0,0,0,0.7);
+            border: 2px solid #555; border-radius: 10px; overflow: hidden;
+            z-index: 10;
+        }
+        #radar-canvas { width: 100%; height: 100%; }
 
         #msg-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 60px; font-weight: bold; text-align: center; display: none; z-index: 100; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 20px; }
         #damage-flash { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: red; opacity: 0; pointer-events: none; }
@@ -32,7 +39,9 @@
     
     <div id="crosshair-container">
         <div id="crosshair">・</div>
-        <div id="warnings"></div> </div>
+    </div>
+
+    <div id="radar-container"><canvas id="radar-canvas"></canvas></div>
 
     <div id="damage-flash"></div>
     <div id="msg-screen">
@@ -44,7 +53,9 @@
 
     <script>
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xffffff);
+        scene.background = new THREE.Color(0x333344); // 夜の色
+        scene.fog = new THREE.Fog(0x333344, 20, 100); // 濃い霧
+
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -55,31 +66,59 @@
         const friction = 0.7;
         const keys = {};
 
+        const radarCanvas = document.getElementById('radar-canvas');
+        const radarCtx = radarCanvas.getContext('2d');
+        const radarSize = radarCanvas.width; // 150px
+
+        // --- 広大な夜間迷路マップ ---
         const wallSize = 16;
         const mazeData = [
-            [1,1,1,1,1,1,1,1,1,1,1],
-            [1,0,0,0,1,0,0,0,3,0,1],
-            [1,0,1,0,0,0,1,1,1,0,1],
-            [1,0,1,1,1,0,0,0,0,0,1],
-            [1,0,0,3,0,1,1,1,0,2,1],
-            [1,1,1,1,1,1,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+            [1,0,1,0,1,0,1,1,1,1,0,1,0,1,1,1,1,1,0,1],
+            [1,0,1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1],
+            [1,0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,0,1],
+            [1,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0,1],
+            [1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,0,1,0,1],
+            [1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,1,0,1],
+            [1,0,1,1,0,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1],
+            [1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,1],
+            [1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,0,1,1,0,1,0,1,1,1,1,1,1,1,0,1],
+            [1,0,0,0,1,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1],
+            [1,0,1,0,1,0,1,1,1,1,1,1,0,1,0,1,1,1,1,1],
+            [1,0,1,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,2,1], // 2がゴール
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
         ];
+        // アイテム配置 (ランダムに4つ配置)
+        for(let i=0; i<4; i++){
+            let randX, randZ;
+            do {
+                randX = Math.floor(Math.random() * mazeData[0].length);
+                randZ = Math.floor(Math.random() * mazeData.length);
+            } while (mazeData[randZ][randX] !== 0);
+            mazeData[randZ][randX] = 3; // 3はアイテム
+        }
+
 
         const walls = [], enemies = [], bullets = [], items = [];
         let goalPos = new THREE.Vector3();
+        let mapWidth = mazeData[0].length * wallSize;
+        let mapHeight = mazeData.length * wallSize;
 
         mazeData.forEach((row, z) => {
             row.forEach((cell, x) => {
                 const px = x * wallSize, pz = z * wallSize;
                 if (cell === 1) {
-                    const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, 12, wallSize), new THREE.MeshStandardMaterial({ color: 0xdddddd }));
+                    const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, 12, wallSize), new THREE.MeshStandardMaterial({ color: 0x666666 })); // 壁の色も暗く
                     wall.position.set(px, 6, pz);
                     scene.add(wall); walls.push(wall);
                 } else if (cell === 2) {
                     createFlag(px, pz); goalPos.set(px, 0, pz);
                 } else if (cell === 3) {
                     createItem(px, pz);
-                } else if (cell === 0 && Math.random() < 0.2 && (x > 2 || z > 2)) {
+                } else if (cell === 0 && Math.random() < 0.1 && (x > 2 || z > 2)) {
                     spawnEnemy(px, pz);
                 }
             });
@@ -94,22 +133,28 @@
         }
 
         function createFlag(x, z) {
-            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 15), new THREE.MeshStandardMaterial({ color: 0x333 }));
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 15), new THREE.MeshStandardMaterial({ color: 0xaaaa00 })); // 夜でも目立つ色
             pole.position.set(x, 7.5, z); scene.add(pole);
             const flag = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 0.2), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
             flag.position.set(x + 3, 12, z); scene.add(flag);
         }
 
         function spawnEnemy(x, z) {
-            const enemy = new THREE.Mesh(new THREE.SphereGeometry(1.5), new THREE.MeshStandardMaterial({ color: 0xff4444 }));
+            const enemy = new THREE.Mesh(new THREE.SphereGeometry(1.5), new THREE.MeshStandardMaterial({ color: 0xff0000 })); // 敵は赤
             enemy.position.set(x, 2, z);
             enemy.userData = { dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize() };
             scene.add(enemy); enemies.push(enemy);
         }
 
-        scene.add(new THREE.AmbientLight(0xaaaaaa));
-        scene.add(new THREE.DirectionalLight(0xffffff, 0.8));
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+        // 光源を調整
+        scene.add(new THREE.AmbientLight(0x444455)); // 暗い環境光
+        const spotLight = new THREE.SpotLight(0xffffff, 0.8, 150, Math.PI/4, 0.5, 2); // スポットライト
+        spotLight.position.set(0, 50, 0); // プレイヤーの上あたりに配置
+        spotLight.target = camera; // カメラが向く方向を照らす
+        scene.add(spotLight);
+
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshStandardMaterial({ color: 0x444455 })); // 地面も暗く
         floor.rotation.x = -Math.PI/2; scene.add(floor);
 
         window.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'Space' && !isGameOver) fireBullet(); });
@@ -140,6 +185,7 @@
             const theta = THREE.MathUtils.degToRad(lon);
             const phi = THREE.MathUtils.degToRad(90 - lat);
             camera.lookAt(new THREE.Vector3().setFromSphericalCoords(1, phi, theta).add(camera.position));
+            spotLight.position.copy(camera.position).add(new THREE.Vector3(0, 10, 0)); // ライトをプレイヤーに追従
 
             const moveVec = new THREE.Vector3();
             const forward = new THREE.Vector3(Math.sin(theta), 0, Math.cos(theta));
@@ -167,29 +213,9 @@
             }
             if (canMove) camera.position.copy(nextPos); else velocity.set(0,0,0);
 
-            // 警告表示のリセット
-            const warningContainer = document.getElementById('warnings');
-            warningContainer.innerHTML = '';
-
             enemies.forEach(e => {
                 const dist = e.position.distanceTo(camera.position);
-                if (dist < 45) {
-                    // プレイヤーから敵への方向ベクトル
-                    const toEnemy = new THREE.Vector3().subVectors(e.position, camera.position).normalize();
-                    const forwardDir = new THREE.Vector3(); camera.getWorldDirection(forwardDir);
-                    
-                    // 警告マークの計算 (水平方向の角度)
-                    const angle = Math.atan2(toEnemy.x, toEnemy.z) - Math.atan2(forwardDir.x, forwardDir.z);
-                    const screenX = Math.sin(angle) * 60;
-                    const screenY = -Math.cos(angle) * 60;
-
-                    const mark = document.createElement('div');
-                    mark.className = 'warning-mark';
-                    mark.innerHTML = '▲';
-                    mark.style.transform = `translate(${screenX}px, ${screenY}px) rotate(${angle}rad)`;
-                    mark.style.opacity = Math.max(0, 1 - dist / 45);
-                    warningContainer.appendChild(mark);
-
+                if (dist < 40) {
                     const targetDir = new THREE.Vector3().subVectors(camera.position, e.position).normalize();
                     e.userData.dir.lerp(targetDir, 0.05);
                     e.position.addScaledVector(e.userData.dir, 0.06);
@@ -204,16 +230,72 @@
                 walls.forEach(w => { if (e.position.distanceTo(w.position) < wallSize/1.7) e.userData.dir.reflect(new THREE.Vector3(1,0,1).normalize()); });
             });
 
-            // 回復・ゴール・弾・死亡判定
-            items.forEach((it, i) => { if (camera.position.distanceTo(it.position) < 4) { hp = 100; document.getElementById('hp-bar').style.width = '100%'; scene.remove(it); items.splice(i, 1); } });
-            if (hp <= 0) { isGameOver = true; document.getElementById('msg-text').textContent = "GAME OVER"; document.getElementById('msg-screen').style.display = 'block'; document.exitPointerLock(); }
-            if (camera.position.distanceTo(goalPos) < 7) { isGameOver = true; document.getElementById('msg-text').textContent = "CLEAR!!"; document.getElementById('msg-screen').style.display = 'block'; document.exitPointerLock(); }
+            items.forEach((it, i) => { 
+                it.rotation.y += 0.02; // アイテムを回転させる
+                if (camera.position.distanceTo(it.position) < 4) { 
+                    hp = 100; document.getElementById('hp-bar').style.width = '100%'; scene.remove(it); items.splice(i, 1); 
+                } 
+            });
+
+            if (hp <= 0) {
+                isGameOver = true; document.getElementById('msg-text').textContent = "GAME OVER"; document.getElementById('msg-screen').style.display = 'block'; document.exitPointerLock();
+            }
+            if (camera.position.distanceTo(goalPos) < 7) {
+                isGameOver = true; document.getElementById('msg-text').textContent = "MISSION COMPLETE!!"; document.getElementById('msg-text').style.color = "#f1c40f"; document.getElementById('msg-screen').style.display = 'block'; document.exitPointerLock();
+            }
             bullets.forEach((b, bi) => {
                 b.position.add(b.velocity);
                 enemies.forEach((e, ei) => { if (b.position.distanceTo(e.position) < 3) { scene.remove(e); enemies.splice(ei, 1); scene.remove(b); bullets.splice(bi, 1); score += 100; } });
             });
 
+            updateRadar();
             renderer.render(scene, camera);
+        }
+
+        function updateRadar() {
+            radarCtx.clearRect(0, 0, radarSize, radarSize);
+            radarCtx.fillStyle = 'rgba(0,0,0,0.7)';
+            radarCtx.fillRect(0, 0, radarSize, radarSize);
+
+            // プレイヤーを中央に描画
+            const playerRadarX = radarSize / 2;
+            const playerRadarY = radarSize / 2;
+            radarCtx.fillStyle = 'white';
+            radarCtx.beginPath();
+            radarCtx.arc(playerRadarX, playerRadarY, 3, 0, Math.PI * 2);
+            radarCtx.fill();
+
+            // 敵の描画
+            enemies.forEach(e => {
+                // 敵のワールド座標をレーダー上の相対座標に変換
+                const relX = e.position.x - camera.position.x;
+                const relZ = e.position.z - camera.position.z;
+
+                // レーダーのスケールに合わせる
+                const scale = radarSize / (mapWidth * 1.5); // マップ全体の1.5倍の範囲を表示
+                const radarX = playerRadarX + relX * scale;
+                const radarY = playerRadarY + relZ * scale;
+
+                // レーダーの範囲内にいれば描画
+                if (radarX > 0 && radarX < radarSize && radarY > 0 && radarY < radarSize) {
+                    radarCtx.fillStyle = 'red';
+                    radarCtx.beginPath();
+                    radarCtx.arc(radarX, radarY, 2, 0, Math.PI * 2);
+                    radarCtx.fill();
+                }
+            });
+
+            // ゴールの描画
+            const relGoalX = goalPos.x - camera.position.x;
+            const relGoalZ = goalPos.z - camera.position.z;
+            const radarGoalX = playerRadarX + relGoalX * scale;
+            const radarGoalY = playerRadarY + relGoalZ * scale;
+            if (radarGoalX > 0 && radarGoalX < radarSize && radarGoalY > 0 && radarGoalY < radarSize) {
+                radarCtx.fillStyle = 'yellow';
+                radarCtx.beginPath();
+                radarCtx.arc(radarGoalX, radarGoalY, 4, 0, Math.PI * 2);
+                radarCtx.fill();
+            }
         }
         animate();
     </script>

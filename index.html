@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D FPS - Awesome Explosion Edition</title>
+    <title>3D FPS - Shadows Edition</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; width: 250px; z-index: 10; }
@@ -55,6 +55,10 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
+        // 影の設定を有効化
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // ソフトな影
+
         let lon = 0, lat = 0, hp = 100, stamina = 100, isGameOver = false;
         const velocity = new THREE.Vector3();
         const friction = 0.7;
@@ -89,6 +93,8 @@
                 if (cell === 1) {
                     const wall = new THREE.Mesh(new THREE.BoxGeometry(wallSize, 10, wallSize), wallMat);
                     wall.position.set(px, 5, pz);
+                    wall.receiveShadow = true; // 壁が影を受け取る
+                    wall.castShadow = true;    // 壁が影を落とす
                     scene.add(wall); walls.push(wall);
                 } else if (cell === 2) {
                     createFlag(px, pz); goalPos.set(px, 0, pz);
@@ -104,31 +110,54 @@
             const group = new THREE.Group();
             const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial({ color: 0xffffff }));
             const cross = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 2.1), new THREE.MeshStandardMaterial({ color: 0x27ae60 }));
+            
+            box.castShadow = true;
+            cross.castShadow = true;
+
             group.add(box, cross); group.position.set(x, 1, z);
             scene.add(group); items.push(group);
         }
 
         function createFlag(x, z) {
             const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 12), new THREE.MeshStandardMaterial({ color: 0x444 }));
-            pole.position.set(x, 6, z); scene.add(pole);
+            pole.position.set(x, 6, z); 
+            pole.castShadow = true;
+            scene.add(pole);
             const flag = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 0.2), new THREE.MeshStandardMaterial({ color: 0xe74c3c }));
-            flag.position.set(x + 2.5, 10, z); scene.add(flag);
+            flag.position.set(x + 2.5, 10, z); 
+            flag.castShadow = true;
+            scene.add(flag);
         }
 
         function spawnEnemy(x, z) {
             const enemy = new THREE.Mesh(new THREE.SphereGeometry(1.8), new THREE.MeshStandardMaterial({ color: 0xc0392b }));
             enemy.position.set(x, 1.8, z);
             enemy.userData = { dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize() };
+            enemy.castShadow = true; // 敵が影を落とす
             scene.add(enemy); enemies.push(enemy);
         }
 
         scene.add(new THREE.AmbientLight(0xffffff, 0.6));
         const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-        sun.position.set(50, 100, 50);
+        sun.position.set(50, 100, 50); // 太陽の位置
+        sun.castShadow = true; // 太陽が影を生成する
+
+        // DirectionalLightの影の設定
+        sun.shadow.mapSize.width = 1024;  // 影の解像度
+        sun.shadow.mapSize.height = 1024;
+        sun.shadow.camera.near = 0.5;
+        sun.shadow.camera.far = 200;
+        sun.shadow.camera.left = -100;
+        sun.shadow.camera.right = 100;
+        sun.shadow.camera.top = 100;
+        sun.shadow.camera.bottom = -100;
+        
         scene.add(sun);
 
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), floorMat);
-        floor.rotation.x = -Math.PI/2; scene.add(floor);
+        floor.rotation.x = -Math.PI/2; 
+        floor.receiveShadow = true; // 地面が影を受け取る
+        scene.add(floor);
 
         window.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'Space' && !isGameOver) fireBullet(); });
         window.addEventListener('keyup', (e) => keys[e.code] = false);
@@ -151,7 +180,6 @@
 
         camera.position.set(wallSize, 3, wallSize);
 
-        // 爆発エフェクトを生成する関数
         function createExplosion(position, color = 0xffa500, numParticles = 20) {
             const explosionGroup = new THREE.Group();
             scene.add(explosionGroup);
@@ -162,8 +190,6 @@
                     new THREE.MeshBasicMaterial({ color: color })
                 );
                 particle.position.copy(position);
-                
-                // 散らばる方向
                 particle.userData.velocity = new THREE.Vector3(
                     (Math.random() - 0.5) * 0.5,
                     (Math.random() - 0.5) * 0.5,
@@ -172,15 +198,13 @@
                 explosionGroup.add(particle);
             }
 
-            // 爆発の光
             const light = new THREE.PointLight(0xffffff, 5, 10);
             light.position.copy(position);
             explosionGroup.add(light);
             
-            // 少ししたら消す
             setTimeout(() => {
                 scene.remove(explosionGroup);
-            }, 500); // 0.5秒で消滅
+            }, 500);
         }
 
 
@@ -249,22 +273,21 @@
                 b.position.add(b.velocity);
                 enemies.forEach((e, ei) => {
                     if (b.position.distanceTo(e.position) < 4) {
-                        createExplosion(e.position.clone()); // ここで爆発エフェクトを呼び出し
+                        createExplosion(e.position.clone());
                         scene.remove(e); enemies.splice(ei, 1);
                         scene.remove(b); bullets.splice(bi, 1);
                     }
                 });
             });
 
-            // 爆発パーティクルの動き
             scene.children.forEach(obj => {
                 if (obj.isGroup && obj.children.length > 0 && obj.children[0].userData.velocity) {
                     obj.children.forEach(particle => {
                         particle.position.add(particle.userData.velocity);
-                        particle.userData.velocity.y -= 0.01; // 重力
-                        particle.material.opacity -= 0.02; // 徐々に薄く
+                        particle.userData.velocity.y -= 0.01;
+                        particle.material.opacity -= 0.02;
                         if (particle.material.opacity <= 0) {
-                            explosionGroup.remove(particle);
+                            if (obj.children.length === 1) scene.remove(obj); // グループから最後のパーティクルが消えたらグループも削除
                         }
                     });
                 }

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>DUNGEON VENDER - 8bit Edition</title>
+    <style>
+        /* レトロドット絵風のデザイン (CSS) */
+        @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
+        
+        :root {
+            --bg: #000; --text: #0f0; --danger: #f00; --panel: #222;
+        }
+        body {
+            background-color: var(--bg); color: var(--text);
+            font-family: 'DotGothic16', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            image-rendering: pixelated;
+        }
+        #game-window {
+            width: 600px; border: 4px solid #fff; padding: 20px;
+            box-shadow: 10px 10px 0px #444; margin-top: 20px;
+        }
+        .stats { display: flex; justify-content: space-between; border-bottom: 2px ridge #eee; padding-bottom: 10px; margin-bottom: 10px; }
+        .log { height: 180px; overflow-y: auto; background: #111; padding: 10px; border: 2px inset #444; font-size: 14px; margin-bottom: 10px; }
+        
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button {
+            background: #444; color: #fff; border: 4px outset #666;
+            padding: 10px; cursor: pointer; font-family: 'DotGothic16', sans-serif;
+        }
+        button:active { border-style: inset; }
+        button:hover { background: #555; }
+        .btn-dark { color: #f0f; border-color: #606; }
+        
+        /* 自販機ビジュアル */
+        #vending-machine {
+            width: 80px; height: 120px; background: #33a; margin: 0 auto 20px;
+            border: 4px solid #fff; position: relative;
+        }
+        .light { width: 10px; height: 10px; background: #f00; position: absolute; top: 5px; right: 5px; border-radius: 50%; }
+        .fever { animation: flash 0.2s infinite; }
+        @keyframes flash { 0% { background: #f00; } 50% { background: #ff0; } 100% { background: #0f0; } }
+    </style>
+</head>
+<body>
+
+<div id="game-window">
+    <div id="vending-machine"><div id="status-light" class="light"></div></div>
+    
+    <div class="stats">
+        <div>GOLD:<span id="gold">500</span></div>
+        <div>冒険者HP:<span id="hp">100</span></div>
+        <div>評判:<span id="reputation">100</span>%</div>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="controls">
+        <button onclick="changePrice(0.8)">安売り支援(評判↑)</button>
+        <button onclick="changePrice(1.5)">ぼったくり(評判↓)</button>
+        <button class="btn-dark" onclick="sellToMonster()">魔物に武器を流す(闇ルート)</button>
+        <button onclick="maintenance()">自販機修理 (200G)</button>
+        <button id="move-btn" onclick="moveFloor()">深層へ移設 (1000G)</button>
+    </div>
+</div>
+
+<script>
+    let state = {
+        gold: 500, hp: 100, rep: 100, floor: 1, 
+        durability: 100, price: 100, monsterMode: false
+    };
+
+    function log(m, color="#0f0") {
+        const l = document.getElementById('log');
+        l.innerHTML = `<div style="color:${color}">> ${m}</div>` + l.innerHTML;
+    }
+
+    function updateDisplay() {
+        document.getElementById('gold').innerText = state.gold;
+        document.getElementById('hp').innerText = Math.floor(state.hp);
+        document.getElementById('reputation').innerText = Math.floor(state.rep);
+        document.getElementById('status-light').className = state.durability < 30 ? 'light fever' : 'light';
+    }
+
+    function changePrice(rate) {
+        state.price = Math.round(state.price * rate);
+        log(`価格を${state.price}Gに変更。`);
+    }
+
+    function sellToMonster() {
+        state.monsterMode = !state.monsterMode;
+        log(state.monsterMode ? "闇取引開始：魔物を強化します..." : "通常営業に戻ります。", "#f0f");
+    }
+
+    function maintenance() {
+        if(state.gold >= 200) {
+            state.gold -= 200; state.durability = 100;
+            log("自販機を修理しました。");
+        }
+        updateDisplay();
+    }
+
+    function moveFloor() {
+        if(state.gold >= 1000) {
+            state.gold -= 1000; state.floor++;
+            log(`第${state.floor}階層へ移設完了。`, "#ff0");
+        }
+        updateDisplay();
+    }
+
+    // メインループ
+    setInterval(() => {
+        // 1. 来客判定 (評判が低いと客が来ない)
+        if (Math.random() * 100 > (100 - state.rep)) {
+            
+            if (state.monsterMode) {
+                // 魔物ルート
+                state.gold += state.price * 0.5;
+                state.hp -= 20;
+                log("魔物に毒薬を売却。冒険者が弱った！", "#f0f");
+            } else {
+                // 冒険者ルート
+                state.gold += state.price;
+                state.hp += 20;
+                // ぼったくりは評判を下げる
+                if(state.price > 150) state.rep -= 5;
+                log(`冒険者が購入。まいどあり！ (+${state.price}G)`);
+            }
+        }
+
+        // 2. モンスター遭遇
+        let dmg = (state.floor * 10) + (state.monsterMode ? 20 : 0);
+        state.hp -= dmg;
+
+        // 3. 特殊イベント：自販機破壊
+        if (state.hp > 0 && state.hp < 20) {
+            log("冒険者が発狂！「金返せ！」自販機を叩いている！", "#f00");
+            state.durability -= 20;
+            state.gold = Math.max(0, state.gold - 50); // 小銭を奪われる
+        }
+
+        // 4. 全滅・遺品回収
+        if (state.hp <= 0) {
+            if (state.monsterMode) {
+                let loot = state.floor * 300;
+                state.gold += loot;
+                log(`計画通り！全滅した冒険者から${loot}G回収。`, "#f0f");
+            } else {
+                log("冒険者が全滅。悪評が広まった...", "#f00");
+                state.rep -= 20;
+            }
+            state.hp = 100 + (state.floor * 20);
+        }
+
+        // 5. 評判の自然回復
+        state.rep = Math.min(100, state.rep + 1);
+
+        // 自販機大破
+        if (state.durability <= 0) {
+            alert("自販機が破壊されました。ゲームオーバー。");
+            location.reload();
+        }
+
+        updateDisplay();
+    }, 3000);
+</script>
+
+</body>
+</html>

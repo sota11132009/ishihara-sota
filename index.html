@@ -2,18 +2,16 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>ZOMBIE CITY - SKY BLUE & SLOW ZOMBIES</title>
+    <title>ZOMBIE CITY - MISSION: 500 KILLS</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: 'Courier New', monospace; }
-        
-        /* UIレイアウト */
         #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; z-index: 10; background: rgba(255,255,255,0.9); padding: 15px; border: 3px solid #333; border-radius: 8px; }
         .bar-container { width: 220px; height: 15px; background: rgba(0,0,0,0.1); margin-bottom: 8px; border: 2px solid #333; }
         #hp-bar { width: 100%; height: 100%; background: #ff5252; transition: width 0.3s; }
         #stamina-bar { width: 100%; height: 100%; background: #4caf50; transition: width 0.1s; }
         #ammo-ui { font-size: 26px; font-weight: bold; margin-top: 5px; color: #333; }
+        #mission-ui { font-size: 20px; font-weight: bold; color: #d32f2f; margin-top: 5px; }
         
-        /* 照準（ピンクで分かりやすく） */
         #reticle { position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); pointer-events: none; z-index: 20; }
         .reticle-line { position: absolute; background: #ff00ff; }
         .v-line { left: 21px; width: 2px; height: 12px; }
@@ -22,8 +20,17 @@
         #ret-dot { position: absolute; top: 20px; left: 20px; width: 4px; height: 4px; background: #ff00ff; border-radius: 50%; }
 
         #minimap { position: absolute; top: 20px; right: 20px; border: 3px solid #333; background: #fff; z-index: 10; }
-        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 100; }
-        button { padding: 20px 50px; font-size: 28px; background: #333; color: #fff; border: 3px solid #fff; cursor: pointer; }
+        
+        /* 終了画面（共通） */
+        .full-overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; flex-direction: column; justify-content: center; 
+            align-items: center; color: white; z-index: 100; text-align: center;
+        }
+        #gameover-overlay { background: rgba(0,0,0,0.8); }
+        #clear-overlay { background: rgba(0, 50, 150, 0.85); }
+        
+        button { padding: 20px 50px; font-size: 28px; background: #fff; color: #000; border: none; cursor: pointer; font-weight: bold; margin-top: 20px; }
         #msg { position: absolute; bottom: 30px; width: 100%; text-align: center; color: #000; font-weight: bold; font-size: 18px; text-shadow: 1px 1px 2px white; }
     </style>
 </head>
@@ -32,7 +39,7 @@
         HP <div class="bar-container"><div id="hp-bar"></div></div>
         STAMINA <div class="bar-container"><div id="stamina-bar"></div></div>
         <div id="ammo-ui"><span id="wp-name">Handgun</span>: <span id="ammo-cur">∞</span></div>
-        <div id="score-ui">SCORE: <span id="score">0</span></div>
+        <div id="mission-ui">REMAINING: <span id="kills-left">500</span> KILLS</div>
     </div>
 
     <div id="reticle">
@@ -44,31 +51,41 @@
     </div>
 
     <canvas id="minimap" width="160" height="160"></canvas>
-    <div id="overlay"><h1>GAME OVER</h1><button onclick="location.reload()">RETRY</button></div>
-    <div id="msg">クリックで開始 | 矢印キー:移動 | SPACE:射撃 | ENTER:武器変更 | CTRL:リロード</div>
+    
+    <div id="gameover-overlay" class="full-overlay">
+        <h1 style="font-size: 80px; color: red;">YOU DIED</h1>
+        <button onclick="location.reload()">RETRY</button>
+    </div>
+
+    <div id="clear-overlay" class="full-overlay">
+        <h1 style="font-size: 80px; color: gold;">MISSION COMPLETE</h1>
+        <p style="font-size: 30px;">500体撃破達成！街の平和は守られた。</p>
+        <button onclick="location.reload()">PLAY AGAIN</button>
+    </div>
+
+    <div id="msg">クリックで開始 | 矢印:移動 | SPACE:射撃 | ENTER:武器変更</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        // --- 1. 世界の設定（空色と明るい光） ---
+        // --- 設定 ---
+        const MISSION_GOAL = 500;
+        let killCount = 0;
+        let hp = 100, stamina = 100, isFinished = false;
+
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87CEEB); // 鮮やかな空色
+        scene.background = new THREE.Color(0x87CEEB);
         scene.fog = new THREE.Fog(0x87CEEB, 60, 250);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        // ライティング（非常に明るく）
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
-        scene.add(ambientLight);
-
+        scene.add(new THREE.AmbientLight(0xffffff, 1.4));
         const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
         sunLight.position.set(20, 60, 20);
         scene.add(sunLight);
 
-        // 地面と建物
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshPhongMaterial({color: 0xcccccc}));
         floor.rotation.x = -Math.PI/2;
         scene.add(floor);
@@ -83,19 +100,16 @@
             }
         }
 
-        // --- 2. ゲームデータ（ゾンビを遅く） ---
-        let hp = 100, stamina = 100, score = 0, isDead = false;
         const zombies = [], bullets = [], keys = {};
-        
         const weapons = {
-            1: { name: "Handgun", ammo: Infinity, cooldown: 350, spread: 0, count: 1, speed: 2.5 },
-            2: { name: "Shotgun", ammo: 8, cooldown: 900, spread: 0.12, count: 6, speed: 2.0 },
-            3: { name: "SMG", ammo: 40, cooldown: 110, spread: 0.05, count: 1, speed: 2.8 }
+            1: { name: "Handgun", ammo: Infinity, cooldown: 300, spread: 0, count: 1, speed: 2.8 },
+            2: { name: "Shotgun", ammo: 12, cooldown: 700, spread: 0.15, count: 10, speed: 2.0 },
+            3: { name: "SMG", ammo: 100, cooldown: 65, spread: 0.06, count: 1, speed: 3.0 }
         };
         let wpIdx = 1, currentWp = weapons[wpIdx], lastShot = 0;
 
         function spawnZombie() {
-            if (zombies.length >= 5) return; 
+            if (zombies.length >= 50 || isFinished) return; 
 
             const group = new THREE.Group();
             const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.4, 0.5), new THREE.MeshPhongMaterial({color: 0x4a7c44}));
@@ -104,27 +118,25 @@
             group.add(body); group.add(head);
             
             const ang = Math.random()*Math.PI*2;
-            const dist = 50 + Math.random()*20;
+            const dist = 45 + Math.random()*30;
             group.position.set(camera.position.x + Math.cos(ang)*dist, 0.7, camera.position.z + Math.sin(ang)*dist);
             
-            // 速度を 0.02 まで低下（かなりゆっくり）
-            group.userData = { hp: 3, speed: 0.02, flash: 0 };
+            group.userData = { hp: 2, speed: 0.02, flash: 0 };
             zombies.push(group);
             scene.add(group);
         }
 
-        for(let i=0; i<5; i++) spawnZombie();
+        for(let i=0; i<40; i++) spawnZombie();
 
-        // --- 3. 操作ロジック ---
         window.addEventListener('keydown', e => { 
             keys[e.code] = true;
-            if(e.code === 'Enter') { 
+            if(e.code === 'Enter' && !isFinished) { 
                 wpIdx = (wpIdx % 3) + 1; 
                 currentWp = weapons[wpIdx]; 
             }
         });
         window.addEventListener('keyup', e => keys[e.code] = false);
-        document.body.addEventListener('click', () => { if(!isDead) document.body.requestPointerLock(); });
+        document.body.addEventListener('click', () => { if(!isFinished) document.body.requestPointerLock(); });
 
         function shoot() {
             const now = Date.now();
@@ -132,10 +144,11 @@
             lastShot = now;
 
             for(let i=0; i<currentWp.count; i++) {
-                const b = new THREE.Mesh(new THREE.SphereGeometry(0.12), new THREE.MeshBasicMaterial({color: 0x222222}));
+                const b = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({color: 0x222222}));
                 b.position.copy(camera.position);
                 const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
                 dir.x += (Math.random()-0.5)*currentWp.spread;
+                dir.y += (Math.random()-0.5)*currentWp.spread;
                 b.userData.vel = dir.normalize().multiplyScalar(currentWp.speed);
                 bullets.push(b); scene.add(b);
             }
@@ -150,11 +163,24 @@
             }
         });
 
-        // --- 4. メインループ ---
         function animate() {
             requestAnimationFrame(animate);
-            if(isDead) return;
-            if(hp <= 0) { isDead = true; document.getElementById('overlay').style.display = 'flex'; document.exitPointerLock(); return; }
+            if(isFinished) return;
+
+            // 敗北判定
+            if(hp <= 0) { 
+                isFinished = true; 
+                document.getElementById('gameover-overlay').style.display = 'flex'; 
+                document.exitPointerLock(); 
+                return; 
+            }
+            // 勝利判定
+            if(killCount >= MISSION_GOAL) {
+                isFinished = true;
+                document.getElementById('clear-overlay').style.display = 'flex';
+                document.exitPointerLock();
+                return;
+            }
 
             let speed = keys['ShiftLeft'] ? 0.25 : 0.14;
             const move = new THREE.Vector3();
@@ -165,37 +191,40 @@
 
             if(keys['Space']) shoot();
 
+            if (zombies.length < 50 && Math.random() < 0.1) spawnZombie();
+
             zombies.forEach((z, zi) => {
                 const dist = z.position.distanceTo(camera.position);
                 const dir = new THREE.Vector3().subVectors(camera.position, z.position).normalize();
                 z.position.add(dir.multiplyScalar(z.userData.speed));
                 z.rotation.y = Math.atan2(dir.x, dir.z);
                 
-                if(dist < 1.6) hp -= 0.4;
+                if(dist < 1.6) hp -= 0.3;
 
-                bullets.forEach((bi_bullet, bi) => {
-                    if(bi_bullet.position.distanceTo(z.position) < 1.6) {
+                bullets.forEach((b, bi) => {
+                    if(b.position.distanceTo(z.position) < 1.8) {
                         z.userData.hp--;
-                        scene.remove(bi_bullet); bullets.splice(bi, 1);
+                        scene.remove(b); bullets.splice(bi, 1);
                         if(z.userData.hp <= 0) {
-                            score += 100; scene.remove(z); zombies.splice(zi,1);
-                            setTimeout(spawnZombie, 4000); // 新しい敵が出るまでの時間を少し長く
+                            killCount++;
+                            scene.remove(z); zombies.splice(zi,1);
                         }
                     }
                 });
             });
 
-            bullets.forEach((b, i) => { b.position.add(b.userData.vel); if(b.position.distanceTo(camera.position)>120){scene.remove(b); bullets.splice(i,1);} });
+            bullets.forEach((b, i) => { b.position.add(b.userData.vel); if(b.position.distanceTo(camera.position)>150){scene.remove(b); bullets.splice(i,1);} });
 
+            // UI
             document.getElementById('hp-bar').style.width = hp + "%";
             document.getElementById('stamina-bar').style.width = stamina + "%";
             document.getElementById('ammo-cur').innerText = currentWp.name + ": " + (currentWp.ammo === Infinity ? "∞" : currentWp.ammo);
-            document.getElementById('score').innerText = score;
+            document.getElementById('kills-left').innerText = Math.max(0, MISSION_GOAL - killCount);
             
             const mctx = document.getElementById('minimap').getContext('2d');
             mctx.clearRect(0,0,160,160);
             mctx.fillStyle="blue"; mctx.fillRect(80+(camera.position.x/400)*160, 80+(camera.position.z/400)*160, 6, 6);
-            mctx.fillStyle="red"; zombies.forEach(z => mctx.fillRect(80+(z.position.x/400)*160, 80+(z.position.z/400)*160, 4, 4));
+            mctx.fillStyle="red"; zombies.forEach(z => mctx.fillRect(80+(z.position.x/400)*160, 80+(z.position.z/400)*160, 3, 3));
 
             renderer.render(scene, camera);
         }

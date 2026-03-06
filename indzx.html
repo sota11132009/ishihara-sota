@@ -2,28 +2,34 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>鬼の目鏡 - Realistic Horror</title>
+    <title>廃ビルの鬼 - Abandoned Building</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Courier New', Courier, monospace; }
+        body { margin: 0; overflow: hidden; background: #111; font-family: 'Segoe UI', sans-serif; }
         #onime { 
             position: absolute; top: 20px; right: 20px; 
-            width: 320px; height: 180px; 
-            border: 2px solid #333; box-shadow: 0 0 20px rgba(255,0,0,0.2);
-            background: #000; overflow: hidden;
+            width: 300px; height: 170px; 
+            border: 4px solid #222; outline: 2px solid #ff0000;
+            background: #000; z-index: 100;
         }
-        /* 鬼の視界に走査線ノイズを追加 */
-        #onime::after {
-            content: "ONI VIEW"; position: absolute; top: 10px; left: 10px; color: red; font-size: 12px; font-weight: bold;
+        #ui { 
+            position: absolute; top: 20px; left: 20px; color: white; 
+            text-shadow: 2px 2px 4px black; pointer-events: none;
         }
-        #ui { position: absolute; bottom: 30px; left: 30px; color: #aaa; pointer-events: none; letter-spacing: 0.1em; }
-        canvas { display: block; }
+        .crosshair {
+            position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
+            border: 1px solid rgba(255,255,255,0.5); border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
     </style>
 </head>
 <body>
     <div id="ui">
-        <p>STATUS: <span id="detection" style="color: #666;">HIDDEN</span></p>
+        <h2>ABANDONED COMPLEX</h2>
+        <p>クリックして開始 | WASD: 移動 | マウス: 視点操作</p>
+        <p id="dist">DISTANCE: --</p>
     </div>
     <div id="onime"></div>
+    <div class="crosshair"></div>
 
 <script type="importmap">
 {
@@ -34,128 +40,128 @@
 <script type="module">
 import * as THREE from 'three';
 
-// --- シーン構築 ---
+// --- 初期設定 ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x020202);
-scene.fog = new THREE.FogExp2(0x020202, 0.08); // 濃い霧で奥行きを出す
+scene.background = new THREE.Color(0xd0d0d0); // 明るい昼間の廃ビル
+scene.fog = new THREE.Fog(0xd0d0d0, 10, 80);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true; // 影を有効化
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
-// メインカメラ
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-
-// 鬼のカメラとレンダラー
-const oniCamera = new THREE.PerspectiveCamera(80, 320 / 180, 0.1, 50);
 const oniRenderer = new THREE.WebGLRenderer({ antialias: true });
-oniRenderer.setSize(320, 180);
+oniRenderer.setSize(300, 170);
 document.getElementById('onime').appendChild(oniRenderer.domElement);
 
-// --- ライティング（重要：リアルな陰影） ---
-const ambientLight = new THREE.AmbientLight(0x404040, 0.2); // 極めて暗い環境光
+// --- カメラ & 操作系 ---
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const oniCamera = new THREE.PerspectiveCamera(70, 300 / 170, 0.1, 100);
+
+let yaw = 0, pitch = 0;
+document.addEventListener('click', () => document.body.requestPointerLock());
+document.addEventListener('mousemove', (e) => {
+    if (document.pointerLockElement === document.body) {
+        yaw -= e.movementX * 0.002;
+        pitch -= e.movementY * 0.002;
+        pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+    }
+});
+
+// --- 廃ビルの建築 ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 
-// プレイヤーの周囲をかすかに照らす（自分の足元だけ見える）
-const playerLight = new THREE.PointLight(0xffffff, 15, 10);
-playerLight.castShadow = true;
-scene.add(playerLight);
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+sunLight.position.set(50, 100, 50);
+sunLight.castShadow = true;
+sunLight.shadow.camera.left = -50;
+sunLight.shadow.camera.right = 50;
+sunLight.shadow.camera.top = 50;
+sunLight.shadow.camera.bottom = -50;
+scene.add(sunLight);
 
-// 鬼のサーチライト（これに当たるとバレる）
-const oniSpotLight = new THREE.SpotLight(0xff0000, 50, 20, Math.PI/4, 0.5, 1);
-oniSpotLight.castShadow = true;
-scene.add(oniSpotLight);
-
-// --- オブジェクト ---
-// 床：白〜灰色のコンクリート風
+// 床（巨大なコンクリートフロア）
 const floorGeo = new THREE.PlaneGeometry(200, 200);
-const floorMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.8, metalness: 0.2 });
+const floorMat = new THREE.MeshStandardMaterial({ color: 0xbcbcbc, roughness: 0.4 });
 const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-// 壁：濃いグレー
-function addWall(x, z, w, d) {
-    const geo = new THREE.BoxGeometry(w, 5, d);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
-    const wall = new THREE.Mesh(geo, mat);
-    wall.position.set(x, 2.5, z);
-    wall.castShadow = true;
-    wall.receiveShadow = true;
-    scene.add(wall);
+// 壁・柱（廃ビル風）
+function createStructure(x, z, w, h, d) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x444444 }); // 濃い灰色
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, h/2, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
 }
-// 迷路のような配置
-addWall(0, -10, 20, 1);
-addWall(10, 0, 1, 20);
-addWall(-10, 5, 1, 10);
-addWall(5, 15, 15, 1);
 
-// プレイヤー（カプセル型で人間に近く）
-const player = new THREE.Group();
-const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1, 4, 8), new THREE.MeshStandardMaterial({color: 0x333333}));
-body.position.y = 1;
-player.add(body);
-scene.add(player);
+// 大きな部屋と回廊を作る
+for(let i=0; i<8; i++) {
+    createStructure(Math.cos(i)*25, Math.sin(i)*25, 4, 15, 4); // 巨大な柱
+}
+createStructure(0, -30, 60, 20, 2); // 奥の大きな壁
+createStructure(20, 10, 2, 10, 15); // 横の仕切り
 
-// 鬼（不気味な浮遊体）
-const oni = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), new THREE.MeshStandardMaterial({color: 0x000000, emissive: 0x330000}));
+// プレイヤー（カメラ位置）
+const playerPos = new THREE.Vector3(0, 1.7, 10);
+const playerObj = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1, 4, 8), new THREE.MeshStandardMaterial({color: 0x222222}));
+scene.add(playerObj);
+
+// 鬼（不気味な黒い実体）
+const oni = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3, 1.5), new THREE.MeshStandardMaterial({color: 0x000000}));
 scene.add(oni);
 
-// --- アニメーション ---
+// --- メインループ ---
 const keys = {};
 window.addEventListener('keydown', e => keys[e.code] = true);
 window.addEventListener('keyup', e => keys[e.code] = false);
 
-let oniAngle = 0;
-
-function update() {
-    const speed = 0.12;
-    if (keys['KeyW'] || keys['ArrowUp']) player.position.z -= speed;
-    if (keys['KeyS'] || keys['ArrowDown']) player.position.z += speed;
-    if (keys['KeyA'] || keys['ArrowLeft']) player.position.x -= speed;
-    if (keys['KeyD'] || keys['ArrowRight']) player.position.x += speed;
-
-    playerLight.position.set(player.position.x, 2, player.position.z);
-
-    // カメラをプレイヤーの背後に滑らかに追従させる
-    const targetCamPos = new THREE.Vector3(player.position.x, 6, player.position.z + 8);
-    camera.position.lerp(targetCamPos, 0.1);
-    camera.lookAt(player.position);
-
-    // 鬼の知能：ゆっくり徘徊し、プレイヤーを探す
-    oniAngle += 0.005;
-    oni.position.x = Math.sin(oniAngle * 2) * 15;
-    oni.position.z = Math.cos(oniAngle) * 15;
-    oni.position.y = 1.5 + Math.sin(oniAngle * 5) * 0.2;
-
-    // 鬼の視線（プレイヤーをじわじわ追い詰める）
-    oniCamera.position.copy(oni.position);
-    oniCamera.lookAt(player.position);
-    
-    oniSpotLight.position.copy(oni.position);
-    oniSpotLight.target = player; // 常にプレイヤーを狙う（恐怖演出）
-
-    // 判定（距離と光による簡易判定）
-    const dist = oni.position.distanceTo(player.position);
-    const detectionUI = document.getElementById('detection');
-    if (dist < 10) {
-        detectionUI.innerText = "CAUTION";
-        detectionUI.style.color = "orange";
-    } else {
-        detectionUI.innerText = "HIDDEN";
-        detectionUI.style.color = "#666";
-    }
-}
-
+let time = 0;
 function animate() {
     requestAnimationFrame(animate);
-    update();
+    time += 0.01;
+
+    // 移動処理
+    const moveSpeed = 0.15;
+    const direction = new THREE.Vector3();
+    if (keys['KeyW']) direction.z -= 1;
+    if (keys['KeyS']) direction.z += 1;
+    if (keys['KeyA']) direction.x -= 1;
+    if (keys['KeyD']) direction.x += 1;
+    direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    playerPos.add(direction.normalize().multiplyScalar(moveSpeed));
+    playerObj.position.copy(playerPos);
+
+    // メインカメラ更新
+    camera.position.copy(playerPos);
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+
+    // 鬼の知能（廃ビルを徘徊）
+    oni.position.x = Math.sin(time * 0.3) * 20;
+    oni.position.z = Math.cos(time * 0.5) * 20;
+    oni.position.y = 1.5;
+    oni.lookAt(playerPos);
+
+    // 鬼の視界（右上）
+    oniCamera.position.copy(oni.position);
+    oniCamera.position.y = 2.5;
+    oniCamera.lookAt(playerPos);
+
+    // UI更新
+    const d = playerPos.distanceTo(oni.position);
+    document.getElementById('dist').innerText = `DISTANCE: ${d.toFixed(1)}m`;
+
     renderer.render(scene, camera);
     oniRenderer.render(scene, oniCamera);
 }
+
 animate();
 
 window.addEventListener('resize', () => {

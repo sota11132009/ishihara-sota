@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>High-Resolution Mansion</title>
+    <title>Mansion Escape: Predatory Speed</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
         canvas { image-rendering: pixelated; border: 4px solid #555; width: 800px; height: 600px; }
@@ -15,7 +15,7 @@
 <body>
     <div id="ui">
         <div id="key-status">Keys: 0 / 3</div>
-        <div id="status">通路が冷たく光っている...</div>
+        <div id="status">鬼は君より速い。走って距離を稼げ。</div>
     </div>
     <div class="stamina-container"><div id="stamina-bar"></div></div>
     <canvas id="game"></canvas>
@@ -47,12 +47,13 @@ const world = [
 let player, onis, props, keysItems;
 
 function init() {
+    // プレイヤー速度: 1.1
     player = { x: 30, y: 30, speed: 1.1, run: 2.2, stm: 100, isProp: false, type: null, keys: 0 };
-    onis = [{ x: 600, y: 100, speed: 1.6, state: 'hunt', nextNode: null }];
+    // 鬼速度: 1.1 * 1.2 = 1.32
+    onis = [{ x: 600, y: 100, speed: 1.32, state: 'hunt', nextNode: null }];
     props = [];
     keysItems = [];
 
-    // 家具を少なめに(30個)、リアルなデザインで生成
     const colors = ['#5d4037', '#795548', '#4e342e'];
     for(let i=0; i<30; i++) {
         let rx, ry;
@@ -112,11 +113,12 @@ function update() {
         if(!k.collected && Math.hypot(player.x-k.x, player.y-k.y) < 12) {
             k.collected = true; player.keys++;
             document.getElementById('key-status').innerText = `Keys: ${player.keys} / 3`;
-            onis.push({ x: 700, y: 200, speed: 1.5 + player.keys*0.15, state: 'hunt', nextNode: null });
+            // 新しく追加される鬼もプレイヤーより速い
+            onis.push({ x: 700, y: 200, speed: player.speed * 1.2 + player.keys*0.1, state: 'hunt', nextNode: null });
         }
     });
 
-    if (player.keys === 3 && player.x < 50 && player.y < 50) { alert("You escaped the mansion!"); init(); }
+    if (player.keys === 3 && player.x < 50 && player.y < 50) { alert("脱出成功！"); init(); }
 
     onis.forEach(o => {
         const dist = Math.hypot(o.x - player.x, o.y - player.y);
@@ -131,23 +133,21 @@ function update() {
             const dx = tx-o.x, dy = ty-o.y, d = Math.hypot(dx,dy);
             if (d>2) { o.x += (dx/d)*o.speed; o.y += (dy/d)*o.speed; } else o.nextNode = null;
         }
-        if (dist < 12 && !player.isProp) {
-            player.x = 30; player.y = 30; // 死んだら初期位置へ
-        }
+        if (dist < 12 && !player.isProp) { player.x = 30; player.y = 30; }
     });
 }
 
 function drawProp(p) {
     if(!p.alive) { ctx.fillStyle = '#111'; ctx.fillRect(p.x, p.y+8, 12, 4); return; }
     ctx.fillStyle = p.c;
-    if(p.style === 0) { // テーブル
+    if(p.style === 0) {
         ctx.fillRect(p.x, p.y, 12, 3);
         ctx.fillRect(p.x+1, p.y, 2, 11); ctx.fillRect(p.x+9, p.y, 2, 11);
-    } else if(p.style === 1) { // 高級ソファ
-        ctx.fillRect(p.x, p.y+4, 12, 8); // 座面
-        ctx.fillRect(p.x, p.y+2, 2, 10); ctx.fillRect(p.x+10, p.y+2, 2, 10); // 肘置き
+    } else if(p.style === 1) {
+        ctx.fillRect(p.x, p.y+4, 12, 8);
+        ctx.fillRect(p.x, p.y+2, 2, 10); ctx.fillRect(p.x+10, p.y+2, 2, 10);
         ctx.fillStyle = '#0003'; ctx.fillRect(p.x+2, p.y+4, 8, 2);
-    } else { // 整理タンス
+    } else {
         ctx.fillRect(p.x, p.y, 12, 12);
         ctx.fillStyle = '#0004'; ctx.fillRect(p.x+2, p.y+3, 8, 1); ctx.fillRect(p.x+2, p.y+8, 8, 1);
         ctx.fillStyle = '#fff4'; ctx.fillRect(p.x+5, p.y+4, 2, 1); ctx.fillRect(p.x+5, p.y+9, 2, 1);
@@ -161,7 +161,6 @@ function draw() {
 
     for(let y=0; y<world.length; y++) for(let x=0; x<world[0].length; x++) {
         if(world[y][x] === 0) continue;
-        // 床の色: 通路(1)=白/灰, 部屋(2)=濃い灰
         ctx.fillStyle = world[y][x] === 1 ? '#dcdcdc' : '#444';
         ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
         ctx.strokeStyle = '#0001'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
@@ -170,9 +169,7 @@ function draw() {
     ctx.fillStyle = 'rgba(0,120,255,0.4)'; ctx.fillRect(TILE, TILE, TILE*2, TILE*2);
     keysItems.forEach(k => { if(!k.collected) { 
         ctx.fillStyle = 'gold'; ctx.beginPath(); ctx.arc(k.x, k.y, 3.5, 0, 7); ctx.fill(); 
-        ctx.shadowBlur = 5; ctx.shadowColor = "gold";
     }});
-    ctx.shadowBlur = 0;
     props.forEach(p => drawProp(p));
 
     if (player.isProp) {

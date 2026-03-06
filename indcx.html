@@ -2,87 +2,84 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Dark Maze Prop Hunt</title>
+    <title>Mansion Escape: 3 Keys</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { image-rendering: pixelated; border: 2px solid #222; width: 800px; height: 600px; background: #050505; }
-        #ui { position: absolute; top: 20px; color: #888; font-family: 'Courier New', monospace; pointer-events: none; text-align: center; font-size: 12px; }
+        canvas { image-rendering: pixelated; border: 2px solid #600; width: 800px; height: 600px; background: #000; }
+        #ui { position: absolute; top: 20px; color: #f00; font-family: 'serif'; text-shadow: 2px 2px #000; pointer-events: none; text-align: center; }
+        #key-status { font-size: 24px; color: gold; }
+        .stamina-container { position: absolute; bottom: 30px; width: 300px; height: 6px; border: 1px solid #400; background: #100; }
+        #stamina-bar { width: 100%; height: 100%; background: #b00; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <div id="status">視界が悪い... 鬼の足音に集中しろ</div>
-        <div id="hint">[SPACE]:擬態 / 矢印キー:移動</div>
+        <div id="key-status">鍵: 0 / 3</div>
+        <div id="status">館に眠る3つの黄金の鍵を集め、入口へ戻れ...</div>
     </div>
+    <div class="stamina-container"><div id="stamina-bar"></div></div>
     <canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const GW = 320; const GH = 240;
+canvas.width = GW; canvas.height = GH;
+const TILE = 20;
 
-const GW = 320; 
-const GH = 240;
-canvas.width = GW;
-canvas.height = GH;
-
-const TILE = 16;
-
-// 1:床, 0:壁
+// 広大なマップ (0:壁, 1:通路, 2:部屋)
 const world = [
-    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    [0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,0],
-    [0,1,0,0,1,0,1,0,1,0,0,0,0,0,1,0,1,0,1,0],
-    [0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0],
-    [0,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,1,0,1,0],
-    [0,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
-    [0,0,0,1,0,1,0,0,0,1,0,0,0,0,0,0,1,0,0,0],
-    [0,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,0],
-    [0,1,0,0,0,0,0,1,0,1,0,1,0,0,0,0,0,0,1,0],
-    [0,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,0],
-    [0,0,0,0,0,1,0,0,0,0,0,1,0,1,0,0,0,0,0,0],
-    [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
-    [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1,0],
-    [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
-    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,1,1,1,1,0,2,2,2,0,1,1,1,1,1,1,1,1,1,0,2,2,2,2,2,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+    [0,1,0,0,1,0,2,2,2,0,1,0,0,0,0,0,0,0,1,0,2,2,2,2,2,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0],
+    [0,1,0,2,2,2,2,2,2,2,1,0,2,2,2,2,2,0,1,1,1,1,1,1,1,1,1,0,2,2,2,2,2,2,2,2,2,0,1,0],
+    [0,1,0,2,2,2,2,2,2,2,1,0,2,2,2,2,2,0,0,0,0,0,0,0,1,0,0,0,2,2,2,2,2,2,2,2,2,0,1,0],
+    [0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,0,2,2,2,2,2,0,1,0,2,2,2,2,0,0,0,0,0,0,0,0,1,0],
+    [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,0,1,0,2,2,2,2,0,2,2,2,2,2,2,0,1,0],
+    [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,1,0,0,2,2,2,2,2,2,0,1,0],
+    [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+    [0,1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0],
+    [0,2,2,1,2,2,2,0,1,1,1,0,2,1,2,2,2,0,1,1,1,0,2,2,2,1,1,1,0,2,1,2,2,2,0,1,1,1,2,0],
+    [0,2,2,1,2,2,2,0,1,0,1,0,2,1,2,2,2,0,1,0,1,0,2,2,2,1,0,1,0,2,1,2,2,2,0,1,0,1,2,0],
+    [0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 ];
 
-// 鬼の巡回ポイント（タイル座標）
-const patrolPoints = [
-    {x: 1, y: 1}, {x: 18, y: 1}, {x: 18, y: 13}, {x: 1, y: 13}, {x: 9, y: 7}
-];
+const player = { x: 30, y: 30, w: 10, h: 14, speed: 1.1, run: 2.3, stm: 100, isProp: false, type: null, keys: 0 };
+const onis = [{ x: 600, y: 100, speed: 1.5, state: 'hunt', anger: 0, nextNode: null }];
+const props = [];
+const keysItems = [];
 
-const player = { x: 32, y: 32, w: 10, h: 14, speed: 1.1, isProp: false, type: null, shake: 0 };
-const oni = { x: 280, y: 200, w: 14, h: 20, speed: 0.6, nextNode: null, patrolIdx: 0, state: 'patrol' };
-const props = [
-    {x:112, y:16, w:16, h:16, c:'#5d4037'},
-    {x:240, y:112, w:20, h:14, c:'#4e342e'},
-    {x:48, y:208, w:16, h:16, c:'#2e7d32'},
-    {x:16, y:80, w:14, h:18, c:'#3e2723'}
-];
+// 家具を配置
+for(let i=0; i<70; i++) {
+    let rx, ry;
+    do { rx = Math.floor(Math.random()*40); ry = Math.floor(Math.random()*14); } while(world[ry][rx] === 0);
+    props.push({x: rx*TILE+3, y: ry*TILE+3, w:14, h:14, c:['#5d4037','#3e2723','#2e7d32','#4e342e'][i%4], alive:true});
+}
+
+// 鍵を配置
+for(let i=0; i<3; i++) {
+    let rx, ry;
+    do { rx = Math.floor(Math.random()*35 + 3); ry = Math.floor(Math.random()*10 + 2); } while(world[ry][rx] === 0);
+    keysItems.push({x: rx*TILE+5, y: ry*TILE+5, collected: false});
+}
 
 const keys = {};
 window.onkeydown = e => keys[e.code] = true;
 window.onkeyup = e => keys[e.code] = false;
 
-function canWalk(x, y) {
-    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
-    return world[ty] && world[ty][tx] === 1;
-}
-
-// 経路探索
-function getPath(startX, startY, endX, endY) {
-    const start = {x: Math.floor(startX/TILE), y: Math.floor(startY/TILE)};
-    const end = {x: Math.floor(endX/TILE), y: Math.floor(endY/TILE)};
-    const queue = [[start]], visited = new Set([`${start.x},${start.y}`]);
-
-    while(queue.length > 0) {
-        const path = queue.shift(), cell = path[path.length - 1];
-        if(cell.x === end.x && cell.y === end.y) return path;
+function getPath(sx, sy, ex, ey) {
+    const start = {x: Math.floor(sx/TILE), y: Math.floor(sy/TILE)};
+    const end = {x: Math.floor(ex/TILE), y: Math.floor(ey/TILE)};
+    if(start.x === end.x && start.y === end.y) return null;
+    const q = [[start]], v = new Set([`${start.x},${start.y}`]);
+    while(q.length > 0) {
+        const p = q.shift(), c = p[p.length-1];
+        if(c.x === end.x && c.y === end.y) return p;
         for(let d of [{x:0,y:1},{x:0,y:-1},{x:1,y:0},{x:-1,y:0}]) {
-            const nx = cell.x + d.x, ny = cell.y + d.y;
-            if(world[ny] && world[ny][nx] === 1 && !visited.has(`${nx},${ny}`)) {
-                visited.add(`${nx},${ny}`);
-                queue.push([...path, {x: nx, y: ny}]);
+            const nx = c.x+d.x, ny = c.y+d.y;
+            if(world[ny] && world[ny][nx]>0 && !v.has(`${nx},${ny}`)) {
+                v.add(`${nx},${ny}`); q.push([...p, {x:nx, y:ny}]);
             }
         }
     }
@@ -90,103 +87,126 @@ function getPath(startX, startY, endX, endY) {
 }
 
 function update() {
-    const dist = Math.hypot(oni.x - player.x, oni.y - player.y);
+    const dash = keys['Space'] && player.stm > 0 && !player.isProp;
 
     // 擬態
-    if (keys['Space']) {
-        const near = props.find(p => Math.hypot(player.x - (p.x+p.w/2), player.y - (p.y+p.h/2)) < 20);
-        if (near && !player.isProp) {
-            player.isProp = true; player.type = near;
-            player.x = near.x + near.w/2; player.y = near.y + near.h/2;
-        } else { player.isProp = false; }
-        keys['Space'] = false;
+    if (keys['KeyZ'] && !player.isProp) {
+        const near = props.find(p => p.alive && Math.hypot(player.x - (p.x+7), player.y - (p.y+7)) < 25);
+        if (near) { player.isProp = true; player.type = near; player.x = near.x+7; player.y = near.y+7; }
     }
+    if (keys['KeyX']) player.isProp = false;
 
-    // 移動
+    // プレイヤー移動
     if (!player.isProp) {
+        let s = dash ? player.run : player.speed;
+        player.stm = dash ? Math.max(0, player.stm-1.2) : Math.min(100, player.stm+0.4);
         let nx = player.x, ny = player.y;
-        if (keys['ArrowUp']) ny -= player.speed;
-        if (keys['ArrowDown']) ny += player.speed;
-        if (keys['ArrowLeft']) nx -= player.speed;
-        if (keys['ArrowRight']) nx += player.speed;
-        if (canWalk(nx, player.y)) player.x = nx;
-        if (canWalk(player.x, ny)) player.y = ny;
+        if (keys['ArrowUp']) ny -= s; if (keys['ArrowDown']) ny += s;
+        if (keys['ArrowLeft']) nx -= s; if (keys['ArrowRight']) nx += s;
+        if (world[Math.floor(ny/TILE)] && world[Math.floor(ny/TILE)][Math.floor(nx/TILE)] > 0) { player.x = nx; player.y = ny; }
+    }
+    document.getElementById('stamina-bar').style.width = player.stm + "%";
+
+    // 鍵の回収
+    keysItems.forEach(k => {
+        if(!k.collected && Math.hypot(player.x-k.x, player.y-k.y) < 15) {
+            k.collected = true;
+            player.keys++;
+            document.getElementById('key-status').innerText = `鍵: ${player.keys} / 3`;
+            // 鬼を追加
+            onis.push({ x: 700, y: 200, speed: 1.4 + player.keys*0.1, state: 'hunt', anger: 0, nextNode: null });
+        }
+    });
+
+    // 脱出判定
+    if (player.keys === 3 && player.x < 50 && player.y < 50) {
+        alert("脱出成功！あなたは生き延びた。"); location.reload();
     }
 
-    // 鬼のAI（巡回と追跡）
-    if (!player.isProp && dist < 70) {
-        oni.state = 'chase';
-        oni.speed = 1.0; // 見つけると少し速くなる
-    } else if (dist > 100 || player.isProp) {
-        oni.state = 'patrol';
-        oni.speed = 0.6;
-    }
-
-    if (!oni.nextNode) {
-        let target;
-        if (oni.state === 'chase') {
-            target = {x: Math.floor(player.x/TILE), y: Math.floor(player.y/TILE)};
-        } else {
-            target = patrolPoints[oni.patrolIdx];
-            if (Math.floor(oni.x/TILE) === target.x && Math.floor(oni.y/TILE) === target.y) {
-                oni.patrolIdx = (oni.patrolIdx + 1) % patrolPoints.length;
-                target = patrolPoints[oni.patrolIdx];
+    // 鬼のAI更新
+    onis.forEach(o => {
+        const dist = Math.hypot(o.x - player.x, o.y - player.y);
+        if (!player.isProp && dist < 110) o.state = 'chase'; else o.state = 'hunt';
+        
+        // 破壊行動
+        if (player.isProp && dist < 40) {
+            o.anger++;
+            if (o.anger > 50) {
+                props.forEach(p => { if(Math.hypot(o.x-p.x, o.y-p.y) < 35) p.alive = false; });
+                o.anger = 0;
             }
         }
-        const path = getPath(oni.x, oni.y, target.x * TILE, target.y * TILE);
-        if (path && path.length > 1) oni.nextNode = path[1];
-    }
 
-    if (oni.nextNode) {
-        const tx = oni.nextNode.x * TILE + TILE/2, ty = oni.nextNode.y * TILE + TILE/2;
-        const dx = tx - oni.x, dy = ty - oni.y, d = Math.hypot(dx, dy);
-        if (d > 1) { oni.x += (dx/d) * oni.speed; oni.y += (dy/d) * oni.speed; }
-        else { oni.nextNode = null; }
-    }
-
-    if (dist < 12 && !player.isProp) { alert("捕まった..."); location.reload(); }
-    player.shake = dist < 50 ? (50 - dist) / 50 : 0;
+        if (!o.nextNode) {
+            let t = (o.state === 'chase') ? {x:player.x, y:player.y} : {x: Math.random()*700+50, y: Math.random()*200+50};
+            const path = getPath(o.x, o.y, t.x, t.y);
+            if (path && path.length > 1) o.nextNode = path[1];
+        }
+        if (o.nextNode) {
+            const tx = o.nextNode.x*TILE+10, ty = o.nextNode.y*TILE+10;
+            const dx = tx-o.x, dy = ty-o.y, d = Math.hypot(dx,dy);
+            if (d>2) { o.x += (dx/d)*o.speed; o.y += (dy/d)*o.speed; } else o.nextNode = null;
+        }
+        if (dist < 14 && !player.isProp) { alert("捕まった..."); location.reload(); }
+    });
 }
 
 function draw() {
-    ctx.clearRect(0, 0, GW, GH);
+    ctx.clearRect(0,0,GW,GH);
+    ctx.save();
+    ctx.translate(Math.floor(GW/2 - player.x), Math.floor(GH/2 - player.y));
 
-    // マップ描画
-    for(let y=0; y<15; y++) {
-        for(let x=0; x<20; x++) {
-            ctx.fillStyle = world[y][x] === 1 ? '#111' : '#000';
-            ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
-        }
+    // マップ
+    for(let y=0; y<world.length; y++) for(let x=0; x<world[0].length; x++) {
+        if(world[y][x] === 0) continue;
+        ctx.fillStyle = world[y][x] === 2 ? '#151010' : '#0a0a0a';
+        ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+        ctx.strokeStyle = '#1a0505'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
     }
 
+    // 出口（スタート地点）の光
+    ctx.fillStyle = player.keys === 3 ? 'rgba(0,255,255,0.5)' : 'rgba(100,100,255,0.2)';
+    ctx.fillRect(TILE, TILE, TILE*2, TILE*2);
+
+    // 鍵
+    keysItems.forEach(k => { if(!k.collected) { 
+        ctx.fillStyle = 'gold'; ctx.beginPath(); ctx.arc(k.x, k.y, 4, 0, 7); ctx.fill(); 
+        ctx.fillStyle = '#fff'; ctx.fillRect(k.x-1, k.y-1, 2, 2);
+    }});
+
     // 家具
-    props.forEach(p => { ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, p.w, p.h); });
+    props.forEach(p => { 
+        if(!p.alive) { ctx.fillStyle = '#100'; ctx.fillRect(p.x, p.y+10, 14, 4); return; }
+        ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, p.w, p.h); 
+    });
 
     // プレイヤー
     if (player.isProp) {
-        ctx.fillStyle = player.type.c;
-        const s = Math.sin(Date.now()*0.1) * (player.shake * 1.5);
-        ctx.fillRect(player.x - player.type.w/2 + s, player.y - player.type.h/2, player.type.w, player.type.h);
+        ctx.fillStyle = player.type.c; ctx.fillRect(player.x-7, player.y-7, 14, 14);
     } else {
         ctx.fillStyle = '#3498db'; ctx.fillRect(player.x-5, player.y-7, 10, 14);
         ctx.fillStyle = '#f3e5ab'; ctx.fillRect(player.x-3, player.y-5, 6, 4);
     }
 
-    // 鬼
-    ctx.fillStyle = '#2e3192'; ctx.fillRect(oni.x-7, oni.y-10, 14, 20);
-    ctx.fillStyle = '#fff'; ctx.fillRect(oni.x-4, oni.y-6, 2, 2); ctx.fillRect(oni.x+2, oni.y-6, 2, 2);
-    ctx.fillStyle = '#f00'; ctx.fillRect(oni.x-3, oni.y+2, 6, 1);
+    // 複数の赤い鬼
+    onis.forEach(o => {
+        ctx.fillStyle = '#b00'; ctx.fillRect(o.x-9, o.y-13, 18, 26);
+        ctx.fillStyle = '#fff'; ctx.fillRect(o.x-5, o.y-8, 3, 3); ctx.fillRect(o.x+2, o.y-8, 3, 3);
+        ctx.fillStyle = '#000'; ctx.fillRect(o.x-4, o.y-7, 1, 1); ctx.fillRect(o.x+3, o.y-7, 1, 1);
+        if(o.state === 'chase') { ctx.fillStyle = '#f00'; ctx.fillRect(o.x-4, o.y+3, 8, 2); }
+    });
 
-    // 視界制限（ここをさらに狭く設定）
-    const viewRadius = 75; // 前回の100-120から縮小
-    const grad = ctx.createRadialGradient(player.x, player.y, 5, player.x, player.y, viewRadius);
+    ctx.restore();
+
+    // 視界制限（極小）
+    const grad = ctx.createRadialGradient(GW/2, GH/2, 2, GW/2, GH/2, 45);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(0.6, 'rgba(0,0,0,0.5)');
     grad.addColorStop(1, 'rgba(0,0,0,1)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, GW, GH);
 
-    requestAnimationFrame(() => { update(); draw(); });
+    update();
+    requestAnimationFrame(draw);
 }
 draw();
 </script>

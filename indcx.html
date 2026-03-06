@@ -2,20 +2,20 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Modern Gothic Mansion</title>
+    <title>High-Resolution Mansion</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { image-rendering: pixelated; border: 4px solid #333; width: 800px; height: 600px; }
-        #ui { position: absolute; top: 20px; color: #eee; font-family: 'Segoe UI', sans-serif; pointer-events: none; text-align: center; }
-        #key-status { font-size: 24px; color: #ffd700; font-weight: bold; }
-        .stamina-container { position: absolute; bottom: 30px; width: 300px; height: 4px; background: rgba(50,50,50,0.8); }
-        #stamina-bar { width: 100%; height: 100%; background: #fff; box-shadow: 0 0 10px #fff; }
+        canvas { image-rendering: pixelated; border: 4px solid #555; width: 800px; height: 600px; }
+        #ui { position: absolute; top: 20px; color: #fff; font-family: 'Arial', sans-serif; pointer-events: none; text-align: center; text-shadow: 2px 2px #000; }
+        #key-status { font-size: 26px; color: #ffd700; font-weight: bold; }
+        .stamina-container { position: absolute; bottom: 30px; width: 300px; height: 6px; background: #222; border: 1px solid #555; }
+        #stamina-bar { width: 100%; height: 100%; background: #eee; box-shadow: 0 0 10px #fff; }
     </style>
 </head>
 <body>
     <div id="ui">
         <div id="key-status">Keys: 0 / 3</div>
-        <div id="status">静寂な館... 鬼はどこかで物を壊している</div>
+        <div id="status">通路が冷たく光っている...</div>
     </div>
     <div class="stamina-container"><div id="stamina-bar"></div></div>
     <canvas id="game"></canvas>
@@ -47,17 +47,19 @@ const world = [
 let player, onis, props, keysItems;
 
 function init() {
-    player = { x: 30, y: 30, speed: 1.2, run: 2.4, stm: 100, isProp: false, type: null, keys: 0 };
-    onis = [{ x: 600, y: 100, speed: 1.6, state: 'hunt', anger: 0, nextNode: null }];
+    player = { x: 30, y: 30, speed: 1.1, run: 2.2, stm: 100, isProp: false, type: null, keys: 0 };
+    onis = [{ x: 600, y: 100, speed: 1.6, state: 'hunt', nextNode: null }];
     props = [];
     keysItems = [];
-    // 家具を少なめに、リアルに生成
-    const colors = ['#5d4037', '#795548', '#3e2723'];
-    for(let i=0; i<35; i++) {
+
+    // 家具を少なめに(30個)、リアルなデザインで生成
+    const colors = ['#5d4037', '#795548', '#4e342e'];
+    for(let i=0; i<30; i++) {
         let rx, ry;
         do { rx = Math.floor(Math.random()*40); ry = Math.floor(Math.random()*14); } while(world[ry][rx] === 0);
         props.push({x: rx*TILE+4, y: ry*TILE+4, w:12, h:12, c:colors[i%3], alive:true, style: i%3});
     }
+
     for(let i=0; i<3; i++) {
         let rx, ry;
         do { rx = Math.floor(Math.random()*35+3); ry = Math.floor(Math.random()*10+2); } while(world[ry][rx] === 0);
@@ -91,14 +93,14 @@ window.onkeyup = e => keys[e.code] = false;
 function update() {
     const dash = keys['Space'] && player.stm > 0 && !player.isProp;
     if (keys['KeyZ'] && !player.isProp) {
-        const near = props.find(p => p.alive && Math.hypot(player.x - (p.x+6), player.y - (p.y+6)) < 20);
+        const near = props.find(p => p.alive && Math.hypot(player.x - (p.x+6), player.y - (p.y+6)) < 18);
         if (near) { player.isProp = true; player.type = near; player.x = near.x+6; player.y = near.y+6; }
     }
     if (keys['KeyX']) player.isProp = false;
 
     if (!player.isProp) {
         let s = dash ? player.run : player.speed;
-        player.stm = dash ? Math.max(0, player.stm-1.2) : Math.min(100, player.stm+0.4);
+        player.stm = dash ? Math.max(0, player.stm-1.0) : Math.min(100, player.stm+0.5);
         let nx = player.x, ny = player.y;
         if (keys['ArrowUp']) ny -= s; if (keys['ArrowDown']) ny += s;
         if (keys['ArrowLeft']) nx -= s; if (keys['ArrowRight']) nx += s;
@@ -110,22 +112,15 @@ function update() {
         if(!k.collected && Math.hypot(player.x-k.x, player.y-k.y) < 12) {
             k.collected = true; player.keys++;
             document.getElementById('key-status').innerText = `Keys: ${player.keys} / 3`;
-            onis.push({ x: 700, y: 200, speed: 1.5 + player.keys*0.2, state: 'hunt', anger: 0, nextNode: null });
+            onis.push({ x: 700, y: 200, speed: 1.5 + player.keys*0.15, state: 'hunt', nextNode: null });
         }
     });
 
-    if (player.keys === 3 && player.x < 50 && player.y < 50) { alert("Congratulations!"); init(); }
+    if (player.keys === 3 && player.x < 50 && player.y < 50) { alert("You escaped the mansion!"); init(); }
 
     onis.forEach(o => {
         const dist = Math.hypot(o.x - player.x, o.y - player.y);
         o.state = (!player.isProp && dist < 120) ? 'chase' : 'hunt';
-        if (player.isProp && dist < 40) {
-            o.anger++;
-            if (o.anger > 60) {
-                props.forEach(p => { if(Math.hypot(o.x-p.x, o.y-p.y) < 30) p.alive = false; });
-                o.anger = 0;
-            }
-        }
         if (!o.nextNode) {
             let t = (o.state === 'chase') ? {x:player.x, y:player.y} : {x: Math.random()*700+50, y: Math.random()*200+50};
             const path = getPath(o.x, o.y, t.x, t.y);
@@ -136,7 +131,9 @@ function update() {
             const dx = tx-o.x, dy = ty-o.y, d = Math.hypot(dx,dy);
             if (d>2) { o.x += (dx/d)*o.speed; o.y += (dy/d)*o.speed; } else o.nextNode = null;
         }
-        if (dist < 12 && !player.isProp) init();
+        if (dist < 12 && !player.isProp) {
+            player.x = 30; player.y = 30; // 死んだら初期位置へ
+        }
     });
 }
 
@@ -144,14 +141,16 @@ function drawProp(p) {
     if(!p.alive) { ctx.fillStyle = '#111'; ctx.fillRect(p.x, p.y+8, 12, 4); return; }
     ctx.fillStyle = p.c;
     if(p.style === 0) { // テーブル
-        ctx.fillRect(p.x, p.y, 12, 4);
-        ctx.fillRect(p.x, p.y, 2, 12); ctx.fillRect(p.x+10, p.y, 2, 12);
-    } else if(p.style === 1) { // ソファ
-        ctx.fillRect(p.x, p.y+4, 12, 8);
-        ctx.fillStyle = '#00000033'; ctx.fillRect(p.x+2, p.y+6, 8, 4);
-    } else { // チェスト
+        ctx.fillRect(p.x, p.y, 12, 3);
+        ctx.fillRect(p.x+1, p.y, 2, 11); ctx.fillRect(p.x+9, p.y, 2, 11);
+    } else if(p.style === 1) { // 高級ソファ
+        ctx.fillRect(p.x, p.y+4, 12, 8); // 座面
+        ctx.fillRect(p.x, p.y+2, 2, 10); ctx.fillRect(p.x+10, p.y+2, 2, 10); // 肘置き
+        ctx.fillStyle = '#0003'; ctx.fillRect(p.x+2, p.y+4, 8, 2);
+    } else { // 整理タンス
         ctx.fillRect(p.x, p.y, 12, 12);
-        ctx.strokeStyle = '#00000066'; ctx.strokeRect(p.x+2, p.y+2, 8, 3); ctx.strokeRect(p.x+2, p.y+7, 8, 3);
+        ctx.fillStyle = '#0004'; ctx.fillRect(p.x+2, p.y+3, 8, 1); ctx.fillRect(p.x+2, p.y+8, 8, 1);
+        ctx.fillStyle = '#fff4'; ctx.fillRect(p.x+5, p.y+4, 2, 1); ctx.fillRect(p.x+5, p.y+9, 2, 1);
     }
 }
 
@@ -160,31 +159,33 @@ function draw() {
     ctx.save();
     ctx.translate(Math.floor(GW/2 - player.x), Math.floor(GH/2 - player.y));
 
-    // マップ描画
     for(let y=0; y<world.length; y++) for(let x=0; x<world[0].length; x++) {
         if(world[y][x] === 0) continue;
-        ctx.fillStyle = world[y][x] === 1 ? '#d1d1d1' : '#2a0505'; // 通路を白/灰に
+        // 床の色: 通路(1)=白/灰, 部屋(2)=濃い灰
+        ctx.fillStyle = world[y][x] === 1 ? '#dcdcdc' : '#444';
         ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
-        ctx.strokeStyle = '#00000011'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
+        ctx.strokeStyle = '#0001'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
     }
 
-    ctx.fillStyle = 'rgba(0,100,255,0.3)'; ctx.fillRect(TILE, TILE, TILE*2, TILE*2);
-    keysItems.forEach(k => { if(!k.collected) { ctx.fillStyle = 'gold'; ctx.beginPath(); ctx.arc(k.x, k.y, 3, 0, 7); ctx.fill(); }});
+    ctx.fillStyle = 'rgba(0,120,255,0.4)'; ctx.fillRect(TILE, TILE, TILE*2, TILE*2);
+    keysItems.forEach(k => { if(!k.collected) { 
+        ctx.fillStyle = 'gold'; ctx.beginPath(); ctx.arc(k.x, k.y, 3.5, 0, 7); ctx.fill(); 
+        ctx.shadowBlur = 5; ctx.shadowColor = "gold";
+    }});
+    ctx.shadowBlur = 0;
     props.forEach(p => drawProp(p));
 
-    // プレイヤー
     if (player.isProp) {
         drawProp({...player.type, x: player.x-6, y: player.y-6});
     } else {
-        ctx.fillStyle = '#2980b9'; ctx.fillRect(player.x-4, player.y-6, 8, 12);
+        ctx.fillStyle = '#2980b9'; ctx.fillRect(player.x-4, player.y-7, 8, 13);
+        ctx.fillStyle = '#f3e5ab'; ctx.fillRect(player.x-2, player.y-5, 4, 3);
     }
 
-    // 赤い鬼
     onis.forEach(o => {
-        ctx.fillStyle = '#e74c3c'; ctx.fillRect(o.x-8, o.y-12, 16, 24);
+        ctx.fillStyle = '#c0392b'; ctx.fillRect(o.x-8, o.y-12, 16, 24);
         ctx.fillStyle = '#fff'; ctx.fillRect(o.x-4, o.y-8, 2, 2); ctx.fillRect(o.x+2, o.y-8, 2, 2);
     });
-
     ctx.restore();
 
     // 視界 (100px)

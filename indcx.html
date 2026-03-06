@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Dot Horror Prop Hunt</title>
+    <title>Dot Horror Prop Hunt - Expanded</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
         canvas { 
@@ -11,18 +11,22 @@
             box-shadow: 0 0 20px rgba(0,0,0,1);
             width: 800px; height: 600px; 
         }
-        #ui { position: absolute; color: #fff; font-family: 'Courier New', Courier, monospace; pointer-events: none; text-shadow: 2px 2px #000; }
+        #ui { position: absolute; top: 20px; color: #fff; font-family: 'Courier New', Courier, monospace; pointer-events: none; text-shadow: 2px 2px #000; z-index: 100; }
+        #status { font-size: 24px; margin-bottom: 10px; }
+        #controls { font-size: 14px; }
     </style>
 </head>
 <body>
-    <div id="ui"></div>
+    <div id="ui">
+        <div id="status">家具に近づいて [SPACE] で擬態</div>
+        <div id="controls">移動: 矢印キー</div>
+    </div>
     <canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-// 低解像度で描画して拡大する（ドット感を出す）
 const GAME_W = 320;
 const GAME_H = 240;
 canvas.width = GAME_W;
@@ -30,145 +34,289 @@ canvas.height = GAME_H;
 
 const TILE_SIZE = 16;
 
+// マップデータ (0: 壁, 1: 床)
+const gameMap = [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,0],
+    [0,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0,0,0,0,0],
+    [0,1,1,1,1,1,1,1,1,0,1,1,1,0,1,1,1,1,1,0],
+    [0,1,1,1,1,1,1,1,1,0,1,1,1,0,1,1,1,1,1,0],
+    [0,0,0,0,0,0,1,0,0,0,1,1,1,0,1,0,0,0,0,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,0],
+    [0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+];
+
 // プレイヤー
 const player = {
-    x: 50, y: 50, w: 12, h: 16,
+    x: 3 * TILE_SIZE + TILE_SIZE/2, y: 3 * TILE_SIZE + TILE_SIZE/2, w: 12, h: 16,
     speed: 1.5,
     isProp: false,
     propType: null,
-    heartbeat: 0
+    heartbeat: 0,
+    lastFootprintTime: 0
 };
 
 // 鬼 (Oni)
 const oni = {
-    x: 280, y: 200, w: 16, h: 22,
+    x: 17 * TILE_SIZE + TILE_SIZE/2, y: 3 * TILE_SIZE + TILE_SIZE/2, w: 16, h: 22,
     speed: 0.8,
-    state: 'search',
-    target: { x: 50, y: 50 },
-    timer: 0
+    state: 'patrol', // 'patrol', 'chase', 'investigate'
+    target: { x: 0, y: 0 },
+    lastFootprint: null,
+    currentPath: [],
+    pathIndex: 0,
+    chaseTimer: 0 // 追跡中の時間
 };
 
 // 家具（擬態対象）
 const props = [
-    { x: 80, y: 60, w: 16, h: 16, color: '#5d4037', type: 'chair' },
-    { x: 200, y: 150, w: 24, h: 16, color: '#4e342e', type: 'desk' },
-    { x: 40, y: 180, w: 12, h: 20, color: '#3e2723', type: 'vase' },
-    { x: 250, y: 40, w: 20, h: 24, color: '#5d4037', type: 'shelf' }
+    { x: 3*TILE_SIZE+4, y: 2*TILE_SIZE+4, w: 16, h: 16, color: '#5d4037', type: 'chair', dx:0,dy:0 },
+    { x: 6*TILE_SIZE+4, y: 5*TILE_SIZE+4, w: 24, h: 16, color: '#4e342e', type: 'desk', dx:0,dy:0 },
+    { x: 1*TILE_SIZE+4, y: 12*TILE_SIZE+4, w: 12, h: 20, color: '#3e2723', type: 'vase', dx:0,dy:0 },
+    { x: 17*TILE_SIZE+4, y: 12*TILE_SIZE+4, w: 20, h: 24, color: '#5d4037', type: 'shelf', dx:0,dy:0 },
+    { x: 10*TILE_SIZE+4, y: 1*TILE_SIZE+4, w: 16, h: 16, color: '#6d5c52', type: 'table', dx:0,dy:0 },
+    { x: 13*TILE_SIZE+4, y: 4*TILE_SIZE+4, w: 16, h: 16, color: '#7a6f6b', type: 'plant', dx:0,dy:0 },
+    { x: 3*TILE_SIZE+4, y: 9*TILE_SIZE+4, w: 20, h: 16, color: '#4a3c39', type: 'bed', dx:0,dy:0 },
+    { x: 10*TILE_SIZE+4, y: 10*TILE_SIZE+4, w: 16, h: 20, color: '#5d4037', type: 'wardrobe', dx:0,dy:0 }
 ];
+
+const footprints = []; // { x, y, time }
 
 const keys = {};
 window.onkeydown = e => keys[e.code] = true;
 window.onkeyup = e => keys[e.code] = false;
 
+function getTile(x, y) {
+    const tx = Math.floor(x / TILE_SIZE);
+    const ty = Math.floor(y / TILE_SIZE);
+    if (tx < 0 || tx >= gameMap[0].length || ty < 0 || ty >= gameMap.length) return 0;
+    return gameMap[ty][tx];
+}
+
+function checkCollision(x, y, w, h) {
+    const p1 = getTile(x, y);
+    const p2 = getTile(x + w, y);
+    const p3 = getTile(x, y + h);
+    const p4 = getTile(x + w, y + h);
+    return p1 === 0 || p2 === 0 || p3 === 0 || p4 === 0;
+}
+
 function update() {
+    const currentTime = Date.now();
+
     // 擬態切り替え
     if (keys['Space']) {
-        const near = props.find(p => Math.hypot(player.x - p.x, player.y - p.y) < 25);
+        const near = props.find(p => Math.hypot(player.x - (p.x + p.w/2), player.y - (p.y + p.h/2)) < 25);
         if (near && !player.isProp) {
             player.isProp = true;
             player.propType = near;
-            player.x = near.x; player.y = near.y;
+            // 擬態位置を家具の中心に合わせる
+            player.dx = player.x - (near.x + near.w/2);
+            player.dy = player.y - (near.y + near.h/2);
+            player.x = near.x + near.w/2;
+            player.y = near.y + near.h/2;
+            document.getElementById('status').innerText = "擬態中... 動くとバレるぞ！";
         } else {
             player.isProp = false;
+            document.getElementById('status').innerText = "家具に近づいて [SPACE] で擬態";
         }
         keys['Space'] = false;
     }
 
-    // 移動
+    // プレイヤー移動（擬態中は不可）
     if (!player.isProp) {
-        if (keys['ArrowUp']) player.y -= player.speed;
-        if (keys['ArrowDown']) player.y += player.speed;
-        if (keys['ArrowLeft']) player.x -= player.speed;
-        if (keys['ArrowRight']) player.x += player.speed;
-    }
+        let newX = player.x;
+        let newY = player.y;
+        if (keys['ArrowUp']) newY -= player.speed;
+        if (keys['ArrowDown']) newY += player.speed;
+        if (keys['ArrowLeft']) newX -= player.speed;
+        if (keys['ArrowRight']) newX += player.speed;
 
-    // 鬼のAI：擬態していないプレイヤーを見つけると追跡
-    const dist = Math.hypot(oni.x - player.x, oni.y - player.y);
-    
-    if (!player.isProp && dist < 100) {
-        oni.state = 'chase';
-    } else if (dist > 150) {
-        oni.state = 'search';
-    }
+        // 壁判定
+        if (!checkCollision(newX - player.w/2, player.y - player.h/2, player.w, player.h)) {
+            player.x = newX;
+        }
+        if (!checkCollision(player.x - player.w/2, newY - player.h/2, player.w, player.h)) {
+            player.y = newY;
+        }
 
-    if (oni.state === 'chase') {
-        oni.x += (player.x - oni.x) * 0.03;
-        oni.y += (player.y - oni.y) * 0.03;
-        oni.speed = 1.2;
-    } else {
-        // パトロール
-        oni.speed = 0.5;
-        oni.x += (oni.target.x - oni.x) * 0.01;
-        oni.y += (oni.target.y - oni.y) * 0.01;
-        if (Math.hypot(oni.x - oni.target.x, oni.y - oni.target.y) < 5) {
-            oni.target = { x: Math.random() * GAME_W, y: Math.random() * GAME_H };
+        // 足跡生成
+        if (Math.hypot(player.x - player.lastFootprintX, player.y - player.lastFootprintY) > TILE_SIZE / 2) {
+            footprints.push({ x: player.x, y: player.y, time: currentTime });
+            player.lastFootprintX = player.x;
+            player.lastFootprintY = player.y;
         }
     }
 
+    // 足跡の削除 (10秒で消える)
+    for (let i = 0; i < footprints.length; i++) {
+        if (currentTime - footprints[i].time > 10000) {
+            footprints.splice(i, 1);
+            i--;
+        }
+    }
+
+    // 鬼のAIロジック
+    const distToPlayer = Math.hypot(oni.x - player.x, oni.y - player.y);
+    
+    // 鬼の視界 (視界内の擬態していないプレイヤー、または足跡)
+    const canSeePlayer = !player.isProp && distToPlayer < 80;
+    const canSeeFootprint = footprints.some(f => Math.hypot(oni.x - f.x, oni.y - f.y) < 30);
+
+    if (canSeePlayer) {
+        oni.state = 'chase';
+        oni.target = { x: player.x, y: player.y };
+        oni.chaseTimer = 300; // 300フレーム追跡
+    } else if (oni.state === 'chase' && oni.chaseTimer > 0) {
+        oni.chaseTimer--;
+        oni.target = { x: player.x, y: player.y }; // 最後に見たプレイヤーの位置を追跡
+    } else if (canSeeFootprint && oni.state !== 'chase') {
+        oni.state = 'investigate';
+        oni.lastFootprint = footprints.reduce((f1, f2) => f1.time > f2.time ? f1 : f2); // 最新の足跡
+        oni.target = { x: oni.lastFootprint.x, y: oni.lastFootprint.y };
+    } else {
+        oni.state = 'patrol';
+    }
+
+    // 鬼の移動
+    let targetX = oni.target.x;
+    let targetY = oni.target.y;
+
+    if (oni.state === 'patrol') {
+        if (Math.hypot(oni.x - oni.target.x, oni.y - oni.target.y) < 5 || getTile(oni.target.x, oni.target.y) === 0) {
+            oni.target = { 
+                x: Math.random() * GAME_W, 
+                y: Math.random() * GAME_H 
+            };
+            while (getTile(oni.target.x, oni.target.y) === 0) { // 壁じゃない場所を探す
+                oni.target = { 
+                    x: Math.random() * GAME_W, 
+                    y: Math.random() * GAME_H 
+                };
+            }
+        }
+        oni.speed = 0.5;
+    } else if (oni.state === 'chase') {
+        oni.speed = 1.8;
+    } else if (oni.state === 'investigate') {
+        oni.speed = 0.8;
+        if (Math.hypot(oni.x - oni.lastFootprint.x, oni.y - oni.lastFootprint.y) < 5) {
+            oni.state = 'patrol'; // 足跡地点に到達したらパトロールに戻る
+        }
+    }
+
+    oni.x += (targetX - oni.x) * (oni.speed / 10);
+    oni.y += (targetY - oni.y) * (oni.speed / 10);
+
+    // 衝突判定（鬼とプレイヤー）
+    if (distToPlayer < (player.isProp ? 10 : 20)) { // 擬態中はより接近しないと捕まらない
+        alert("捕まった！");
+        location.reload();
+    }
+
     // 心音エフェクト
-    if (dist < 80) player.heartbeat += (80 - dist) * 0.01;
+    if (distToPlayer < 100) player.heartbeat += (100 - distToPlayer) * 0.005;
+    else player.heartbeat = Math.max(0, player.heartbeat - 0.5); // 遠ざかると減る
+
+    // UI更新
+    const statusText = player.isProp ? "擬態中... 鬼が近いと心臓がやばい..." : "移動: 矢印キー | 擬態: [SPACE]";
+    document.getElementById('status').innerText = statusText;
 }
 
 function draw() {
-    // 背景（畳や古い床をイメージした暗い色）
+    // 背景（床）
     ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-    // グリッド線（うっすら）
-    ctx.strokeStyle = '#222';
-    for(let i=0; i<GAME_W; i+=TILE_SIZE) ctx.strokeRect(i, 0, 1, GAME_H);
+    // 壁
+    ctx.fillStyle = '#444';
+    for (let y = 0; y < gameMap.length; y++) {
+        for (let x = 0; x < gameMap[y].length; x++) {
+            if (gameMap[y][x] === 0) {
+                ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            }
+        }
+    }
+
+    // 足跡
+    footprints.forEach(f => {
+        ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
+        ctx.fillRect(f.x - 4, f.y - 4, 8, 8);
+    });
 
     // 家具
     props.forEach(p => {
         ctx.fillStyle = p.color;
         ctx.fillRect(p.x, p.y, p.w, p.h);
-        // ドットのハイライト
-        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillStyle = 'rgba(255,255,255,0.1)'; // ハイライト
         ctx.fillRect(p.x, p.y, p.w, 2);
     });
 
     // プレイヤー
     if (player.isProp) {
         ctx.fillStyle = player.propType.color;
-        ctx.fillRect(player.x, player.y, player.propType.w, player.propType.h);
-        // 緊張による小刻みな震え
-        if (Math.sin(Date.now()*0.02) > 0.8 && Math.hypot(oni.x-player.x, oni.y-player.y) < 50) {
-            player.x += Math.sin(Date.now());
-        }
+        // 擬態中は元の家具の中心に表示し、緊張で微振動
+        const px = player.propType.x + player.propType.w/2 + player.dx;
+        const py = player.propType.y + player.propType.h/2 + player.dy;
+        const shakeX = Math.sin(Date.now() * 0.05) * (player.heartbeat * 0.1);
+        const shakeY = Math.cos(Date.now() * 0.05) * (player.heartbeat * 0.1);
+        ctx.fillRect(px - player.propType.w/2 + shakeX, py - player.propType.h/2 + shakeY, player.propType.w, player.propType.h);
     } else {
         ctx.fillStyle = '#3498db'; // 青い服の男
-        ctx.fillRect(player.x, player.y, player.w, player.h);
+        ctx.fillRect(player.x - player.w/2, player.y - player.h/2, player.w, player.h);
         ctx.fillStyle = '#f3e5ab'; // 肌色
-        ctx.fillRect(player.x + 2, player.y + 2, 8, 4);
+        ctx.fillRect(player.x - player.w/2 + 2, player.y - player.h/2 + 2, 8, 4);
     }
 
-    // 鬼 (Oni) - 青鬼風の配色
-    ctx.fillStyle = '#2e3192'; 
-    ctx.fillRect(oni.x, oni.y, oni.w, oni.h);
+    // 鬼 (Oni) - より怖いドット絵
+    ctx.fillStyle = '#2e3192'; // 本体
+    ctx.fillRect(oni.x - oni.w/2, oni.y - oni.h/2, oni.w, oni.h);
     ctx.fillStyle = '#fff'; // 目
-    ctx.fillRect(oni.x+2, oni.y+4, 4, 4);
-    ctx.fillRect(oni.x+10, oni.y+4, 4, 4);
+    ctx.fillRect(oni.x - 6, oni.y - 8, 4, 4);
+    ctx.fillRect(oni.x + 2, oni.y - 8, 4, 4);
     ctx.fillStyle = '#000'; // 瞳
-    ctx.fillRect(oni.x+3, oni.y+5, 2, 2);
-    ctx.fillRect(oni.x+11, oni.y+5, 2, 2);
+    ctx.fillRect(oni.x - 5, oni.y - 7, 2, 2);
+    ctx.fillRect(oni.x + 3, oni.y - 7, 2, 2);
+    ctx.fillStyle = '#ff0000'; // 口
+    ctx.fillRect(oni.x - 4, oni.y - 2, 8, 2);
+    ctx.fillStyle = '#8b0000'; // 影
+    ctx.fillRect(oni.x - oni.w/2, oni.y + oni.h/2 - 4, oni.w, 4);
 
-    // 暗闇（ビネット効果）
-    const grad = ctx.createRadialGradient(player.x, player.y, 20, player.x, player.y, 120);
+
+    // 暗闇（ビネット効果 + 心音による画面揺れ）
+    const grad = ctx.createRadialGradient(player.x, player.y, 20, player.x, player.y, 100);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(1, 'rgba(0,0,0,0.95)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, GAME_W, GAME_H);
 
     // 画面の揺れ（心音と連動）
-    if (player.heartbeat > 1) {
-        const shift = Math.sin(Date.now() * 0.01) * 2;
-        canvas.style.transform = `translate(${shift}px, 0)`;
-    }
+    const screenShake = Math.sin(Date.now() * 0.05) * (player.heartbeat * 0.2);
+    canvas.style.transform = `translate(${screenShake}px, ${screenShake}px)`;
 
     requestAnimationFrame(() => {
         update();
         draw();
     });
+}
+
+// 鬼の初期ターゲットを設定
+oni.target = { 
+    x: Math.random() * GAME_W, 
+    y: Math.random() * GAME_H 
+};
+while (getTile(oni.target.x, oni.target.y) === 0) {
+    oni.target = { 
+        x: Math.random() * GAME_W, 
+        y: Math.random() * GAME_H 
+    };
 }
 
 draw();

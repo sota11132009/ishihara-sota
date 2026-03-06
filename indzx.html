@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>鬼の目鏡 - Mirror of Oni</title>
+    <style>
+        body { margin: 0; background: #111; color: white; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; border: 2px solid #444; margin: 10px auto; }
+        .ui { text-align: center; }
+        #status { font-weight: bold; color: #ff4444; }
+    </style>
+</head>
+<body>
+    <div class="ui">
+        <h1>鬼の目鏡</h1>
+        <p>十字キーまたはWASDで移動。右上の【鬼の視界】を見て逃げろ！</p>
+        <p id="status">隠密中...</p>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const statusText = document.getElementById('status');
+
+// ゲーム設定
+const player = { x: 100, y: 100, size: 15, color: '#00ff00', speed: 3 };
+const oni = { x: 700, y: 500, size: 20, color: '#ff0000', angle: 0, speed: 1.5, state: 'patrol' };
+const walls = [
+    { x: 200, y: 150, w: 20, h: 300 },
+    { x: 400, y: 0, w: 20, h: 250 },
+    { x: 400, y: 350, w: 20, h: 250 },
+    { x: 550, y: 200, w: 200, h: 20 }
+];
+
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+function update() {
+    // プレイヤー移動
+    let nextX = player.x;
+    let nextY = player.y;
+    if (keys['ArrowUp'] || keys['w']) nextY -= player.speed;
+    if (keys['ArrowDown'] || keys['s']) nextY += player.speed;
+    if (keys['ArrowLeft'] || keys['a']) nextX -= player.speed;
+    if (keys['ArrowRight'] || keys['d']) nextX += player.speed;
+
+    if (!checkWallCollision(nextX, nextY, player.size)) {
+        player.x = nextX;
+        player.y = nextY;
+    }
+
+    // 鬼の知能（パトロール & 追跡）
+    if (oni.state === 'patrol') {
+        oni.angle += 0.02;
+        oni.x += Math.cos(oni.angle) * oni.speed;
+        oni.y += Math.sin(oni.angle) * oni.speed;
+        // 壁に当たりそうなら反転
+        if (checkWallCollision(oni.x, oni.y, oni.size) || oni.x < 0 || oni.x > 800) oni.angle += Math.PI;
+    } else {
+        // 追跡モード
+        let dx = player.x - oni.x;
+        let dy = player.y - oni.y;
+        oni.angle = Math.atan2(dy, dx);
+        oni.x += Math.cos(oni.angle) * (oni.speed + 1);
+        oni.y += Math.sin(oni.angle) * (oni.speed + 1);
+    }
+
+    // 視認判定（レイキャスト簡易版）
+    if (canOniSeePlayer()) {
+        oni.state = 'chase';
+        statusText.innerText = "！！ 発見された ！！";
+    } else {
+        oni.state = 'patrol';
+        statusText.innerText = "隠密中...";
+    }
+}
+
+function checkWallCollision(x, y, size) {
+    return walls.some(w => x + size > w.x && x - size < w.x + w.w && y + size > w.y && y - size < w.y + w.h);
+}
+
+function canOniSeePlayer() {
+    const dx = player.x - oni.x;
+    const dy = player.y - oni.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > 300) return false; // 射程外
+
+    const angleToPlayer = Math.atan2(dy, dx);
+    const diffAngle = Math.abs(oni.angle - angleToPlayer);
+    if (diffAngle > 0.8) return false; // 視野角外
+
+    // 壁の遮蔽判定（簡易）
+    for (let w of walls) {
+        if (lineRectIntersects(oni.x, oni.y, player.x, player.y, w)) return false;
+    }
+    return true;
+}
+
+function lineRectIntersects(x1, y1, x2, y2, rect) {
+    // 簡易的な線分と矩形の交差判定
+    return false; // ※詳細な判定はライブラリ等を使うのが一般的ですが、今回は省略
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 壁の描画
+    ctx.fillStyle = '#555';
+    walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
+
+    // プレイヤーと鬼
+    ctx.fillStyle = player.color;
+    ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
+
+    ctx.fillStyle = oni.color;
+    ctx.beginPath(); ctx.arc(oni.x, oni.y, oni.size, 0, Math.PI*2); ctx.fill();
+
+    // 鬼の向き（視線ガイド）
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+    ctx.beginPath();
+    ctx.moveTo(oni.x, oni.y);
+    ctx.lineTo(oni.x + Math.cos(oni.edge) * 100, oni.y + Math.sin(oni.edge) * 100);
+    ctx.stroke();
+
+    // --- 「鬼の目」鏡の描画 ---
+    const mirrorSize = 150;
+    ctx.save();
+    ctx.translate(canvas.width - mirrorSize - 10, 10);
+    // 枠
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 0, mirrorSize, mirrorSize);
+    ctx.clip(new Path2D(`M0,0 h${mirrorSize} v${mirrorSize} h-${mirrorSize} z`));
+    
+    // 鬼の視点で回転・移動
+    ctx.translate(mirrorSize/2, mirrorSize/2);
+    ctx.rotate(-oni.angle + Math.PI/2);
+    ctx.translate(-oni.x, -oni.y);
+    
+    // 同じ内容を鬼視点で再描画
+    ctx.fillStyle = '#222'; ctx.fillRect(0,0, 2000, 2000); // 背景
+    walls.forEach(w => { ctx.fillStyle = '#555'; ctx.fillRect(w.x, w.y, w.w, w.h); });
+    ctx.fillStyle = player.color;
+    ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
+    
+    ctx.restore();
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

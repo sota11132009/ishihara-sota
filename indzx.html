@@ -2,158 +2,167 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>鬼の目鏡 - Mirror of Oni</title>
+    <title>鬼の目鏡 - Realistic Horror</title>
     <style>
-        body { margin: 0; background: #111; color: white; overflow: hidden; font-family: sans-serif; }
-        canvas { display: block; border: 2px solid #444; margin: 10px auto; }
-        .ui { text-align: center; }
-        #status { font-weight: bold; color: #ff4444; }
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Courier New', Courier, monospace; }
+        #onime { 
+            position: absolute; top: 20px; right: 20px; 
+            width: 320px; height: 180px; 
+            border: 2px solid #333; box-shadow: 0 0 20px rgba(255,0,0,0.2);
+            background: #000; overflow: hidden;
+        }
+        /* 鬼の視界に走査線ノイズを追加 */
+        #onime::after {
+            content: "ONI VIEW"; position: absolute; top: 10px; left: 10px; color: red; font-size: 12px; font-weight: bold;
+        }
+        #ui { position: absolute; bottom: 30px; left: 30px; color: #aaa; pointer-events: none; letter-spacing: 0.1em; }
+        canvas { display: block; }
     </style>
 </head>
 <body>
-    <div class="ui">
-        <h1>鬼の目鏡</h1>
-        <p>十字キーまたはWASDで移動。右上の【鬼の視界】を見て逃げろ！</p>
-        <p id="status">隠密中...</p>
+    <div id="ui">
+        <p>STATUS: <span id="detection" style="color: #666;">HIDDEN</span></p>
     </div>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="onime"></div>
 
-<script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const statusText = document.getElementById('status');
+<script type="importmap">
+{
+    "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" }
+}
+</script>
 
-// ゲーム設定
-const player = { x: 100, y: 100, size: 15, color: '#00ff00', speed: 3 };
-const oni = { x: 700, y: 500, size: 20, color: '#ff0000', angle: 0, speed: 1.5, state: 'patrol' };
-const walls = [
-    { x: 200, y: 150, w: 20, h: 300 },
-    { x: 400, y: 0, w: 20, h: 250 },
-    { x: 400, y: 350, w: 20, h: 250 },
-    { x: 550, y: 200, w: 200, h: 20 }
-];
+<script type="module">
+import * as THREE from 'three';
 
+// --- シーン構築 ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020202);
+scene.fog = new THREE.FogExp2(0x020202, 0.08); // 濃い霧で奥行きを出す
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true; // 影を有効化
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// メインカメラ
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+// 鬼のカメラとレンダラー
+const oniCamera = new THREE.PerspectiveCamera(80, 320 / 180, 0.1, 50);
+const oniRenderer = new THREE.WebGLRenderer({ antialias: true });
+oniRenderer.setSize(320, 180);
+document.getElementById('onime').appendChild(oniRenderer.domElement);
+
+// --- ライティング（重要：リアルな陰影） ---
+const ambientLight = new THREE.AmbientLight(0x404040, 0.2); // 極めて暗い環境光
+scene.add(ambientLight);
+
+// プレイヤーの周囲をかすかに照らす（自分の足元だけ見える）
+const playerLight = new THREE.PointLight(0xffffff, 15, 10);
+playerLight.castShadow = true;
+scene.add(playerLight);
+
+// 鬼のサーチライト（これに当たるとバレる）
+const oniSpotLight = new THREE.SpotLight(0xff0000, 50, 20, Math.PI/4, 0.5, 1);
+oniSpotLight.castShadow = true;
+scene.add(oniSpotLight);
+
+// --- オブジェクト ---
+// 床：白〜灰色のコンクリート風
+const floorGeo = new THREE.PlaneGeometry(200, 200);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.8, metalness: 0.2 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// 壁：濃いグレー
+function addWall(x, z, w, d) {
+    const geo = new THREE.BoxGeometry(w, 5, d);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+    const wall = new THREE.Mesh(geo, mat);
+    wall.position.set(x, 2.5, z);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    scene.add(wall);
+}
+// 迷路のような配置
+addWall(0, -10, 20, 1);
+addWall(10, 0, 1, 20);
+addWall(-10, 5, 1, 10);
+addWall(5, 15, 15, 1);
+
+// プレイヤー（カプセル型で人間に近く）
+const player = new THREE.Group();
+const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1, 4, 8), new THREE.MeshStandardMaterial({color: 0x333333}));
+body.position.y = 1;
+player.add(body);
+scene.add(player);
+
+// 鬼（不気味な浮遊体）
+const oni = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), new THREE.MeshStandardMaterial({color: 0x000000, emissive: 0x330000}));
+scene.add(oni);
+
+// --- アニメーション ---
 const keys = {};
-window.addEventListener('keydown', e => keys[e.key] = true);
-window.addEventListener('keyup', e => keys[e.key] = false);
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+let oniAngle = 0;
 
 function update() {
-    // プレイヤー移動
-    let nextX = player.x;
-    let nextY = player.y;
-    if (keys['ArrowUp'] || keys['w']) nextY -= player.speed;
-    if (keys['ArrowDown'] || keys['s']) nextY += player.speed;
-    if (keys['ArrowLeft'] || keys['a']) nextX -= player.speed;
-    if (keys['ArrowRight'] || keys['d']) nextX += player.speed;
+    const speed = 0.12;
+    if (keys['KeyW'] || keys['ArrowUp']) player.position.z -= speed;
+    if (keys['KeyS'] || keys['ArrowDown']) player.position.z += speed;
+    if (keys['KeyA'] || keys['ArrowLeft']) player.position.x -= speed;
+    if (keys['KeyD'] || keys['ArrowRight']) player.position.x += speed;
 
-    if (!checkWallCollision(nextX, nextY, player.size)) {
-        player.x = nextX;
-        player.y = nextY;
-    }
+    playerLight.position.set(player.position.x, 2, player.position.z);
 
-    // 鬼の知能（パトロール & 追跡）
-    if (oni.state === 'patrol') {
-        oni.angle += 0.02;
-        oni.x += Math.cos(oni.angle) * oni.speed;
-        oni.y += Math.sin(oni.angle) * oni.speed;
-        // 壁に当たりそうなら反転
-        if (checkWallCollision(oni.x, oni.y, oni.size) || oni.x < 0 || oni.x > 800) oni.angle += Math.PI;
+    // カメラをプレイヤーの背後に滑らかに追従させる
+    const targetCamPos = new THREE.Vector3(player.position.x, 6, player.position.z + 8);
+    camera.position.lerp(targetCamPos, 0.1);
+    camera.lookAt(player.position);
+
+    // 鬼の知能：ゆっくり徘徊し、プレイヤーを探す
+    oniAngle += 0.005;
+    oni.position.x = Math.sin(oniAngle * 2) * 15;
+    oni.position.z = Math.cos(oniAngle) * 15;
+    oni.position.y = 1.5 + Math.sin(oniAngle * 5) * 0.2;
+
+    // 鬼の視線（プレイヤーをじわじわ追い詰める）
+    oniCamera.position.copy(oni.position);
+    oniCamera.lookAt(player.position);
+    
+    oniSpotLight.position.copy(oni.position);
+    oniSpotLight.target = player; // 常にプレイヤーを狙う（恐怖演出）
+
+    // 判定（距離と光による簡易判定）
+    const dist = oni.position.distanceTo(player.position);
+    const detectionUI = document.getElementById('detection');
+    if (dist < 10) {
+        detectionUI.innerText = "CAUTION";
+        detectionUI.style.color = "orange";
     } else {
-        // 追跡モード
-        let dx = player.x - oni.x;
-        let dy = player.y - oni.y;
-        oni.angle = Math.atan2(dy, dx);
-        oni.x += Math.cos(oni.angle) * (oni.speed + 1);
-        oni.y += Math.sin(oni.angle) * (oni.speed + 1);
-    }
-
-    // 視認判定（レイキャスト簡易版）
-    if (canOniSeePlayer()) {
-        oni.state = 'chase';
-        statusText.innerText = "！！ 発見された ！！";
-    } else {
-        oni.state = 'patrol';
-        statusText.innerText = "隠密中...";
+        detectionUI.innerText = "HIDDEN";
+        detectionUI.style.color = "#666";
     }
 }
 
-function checkWallCollision(x, y, size) {
-    return walls.some(w => x + size > w.x && x - size < w.x + w.w && y + size > w.y && y - size < w.y + w.h);
-}
-
-function canOniSeePlayer() {
-    const dx = player.x - oni.x;
-    const dy = player.y - oni.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > 300) return false; // 射程外
-
-    const angleToPlayer = Math.atan2(dy, dx);
-    const diffAngle = Math.abs(oni.angle - angleToPlayer);
-    if (diffAngle > 0.8) return false; // 視野角外
-
-    // 壁の遮蔽判定（簡易）
-    for (let w of walls) {
-        if (lineRectIntersects(oni.x, oni.y, player.x, player.y, w)) return false;
-    }
-    return true;
-}
-
-function lineRectIntersects(x1, y1, x2, y2, rect) {
-    // 簡易的な線分と矩形の交差判定
-    return false; // ※詳細な判定はライブラリ等を使うのが一般的ですが、今回は省略
-}
-
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // 壁の描画
-    ctx.fillStyle = '#555';
-    walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
-
-    // プレイヤーと鬼
-    ctx.fillStyle = player.color;
-    ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
-
-    ctx.fillStyle = oni.color;
-    ctx.beginPath(); ctx.arc(oni.x, oni.y, oni.size, 0, Math.PI*2); ctx.fill();
-
-    // 鬼の向き（視線ガイド）
-    ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-    ctx.beginPath();
-    ctx.moveTo(oni.x, oni.y);
-    ctx.lineTo(oni.x + Math.cos(oni.edge) * 100, oni.y + Math.sin(oni.edge) * 100);
-    ctx.stroke();
-
-    // --- 「鬼の目」鏡の描画 ---
-    const mirrorSize = 150;
-    ctx.save();
-    ctx.translate(canvas.width - mirrorSize - 10, 10);
-    // 枠
-    ctx.strokeStyle = 'red';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(0, 0, mirrorSize, mirrorSize);
-    ctx.clip(new Path2D(`M0,0 h${mirrorSize} v${mirrorSize} h-${mirrorSize} z`));
-    
-    // 鬼の視点で回転・移動
-    ctx.translate(mirrorSize/2, mirrorSize/2);
-    ctx.rotate(-oni.angle + Math.PI/2);
-    ctx.translate(-oni.x, -oni.y);
-    
-    // 同じ内容を鬼視点で再描画
-    ctx.fillStyle = '#222'; ctx.fillRect(0,0, 2000, 2000); // 背景
-    walls.forEach(w => { ctx.fillStyle = '#555'; ctx.fillRect(w.x, w.y, w.w, w.h); });
-    ctx.fillStyle = player.color;
-    ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
-    
-    ctx.restore();
-}
-
-function loop() {
+function animate() {
+    requestAnimationFrame(animate);
     update();
-    draw();
-    requestAnimationFrame(loop);
+    renderer.render(scene, camera);
+    oniRenderer.render(scene, oniCamera);
 }
-loop();
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>

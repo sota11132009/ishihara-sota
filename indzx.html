@@ -2,29 +2,25 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>高視認性・廃ビル脱出</title>
+    <title>視認性重視 - 鬼の目鏡</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #fff; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #888; font-family: sans-serif; }
         #onime { 
-            position: absolute; top: 20px; right: 20px; 
-            width: 300px; height: 170px; 
-            border: 5px solid #ff0000; background: #000; z-index: 100;
+            position: absolute; top: 10px; right: 10px; 
+            width: 250px; height: 150px; 
+            border: 5px solid red; background: #000; z-index: 100;
         }
-        #ui { position: absolute; top: 20px; left: 20px; color: #000; pointer-events: none; z-index: 10; }
-        #msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 40px; background: rgba(0,0,0,0.8); padding: 20px; display: none; z-index: 1000; }
-        .stamina-bar { width: 200px; height: 15px; background: #ddd; border: 2px solid #000; }
-        #stamina-fill { width: 100%; height: 100%; background: #00ff00; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #000; z-index: 10; background: rgba(255,255,255,0.8); padding: 10px; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h1>BRIGHT BUILDING</h1>
-        <p>カギ(黄色)を3つ取って青い扉へ！</p>
-        <div style="font-size: 24px;">KEYS: <span id="key-count">0 / 3</span></div>
-        <div class="stamina-bar"><div id="stamina-fill"></div></div>
+        <b>画面が見えない場合のチェック：</b><br>
+        1. 画面をクリックしてマウスを動かしてください。<br>
+        2. WASDキーで移動できます。<br>
+        3. 黄色の球体がカギ、青い巨大な壁がゴールです。
     </div>
     <div id="onime"></div>
-    <div id="msg"></div>
 
 <script type="importmap">
 { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -33,123 +29,96 @@
 <script type="module">
 import * as THREE from 'three';
 
+// 1. シーンとレンダラー
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xeeeeee); // 背景を白に近いグレーに
+scene.background = new THREE.Color(0xeeeeee); // 背景は明るいグレー
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
-// 影（Shadow）を完全にオフにして視認性を優先
-renderer.shadowMap.enabled = false;
 document.body.appendChild(renderer.domElement);
 
-const oniRenderer = new THREE.WebGLRenderer({ antialias: true });
-oniRenderer.setSize(300, 170);
+const oniRenderer = new THREE.WebGLRenderer();
+oniRenderer.setSize(250, 150);
 document.getElementById('onime').appendChild(oniRenderer.domElement);
 
+// 2. カメラ（位置を高くして埋まらないようにする）
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const oniCamera = new THREE.PerspectiveCamera(75, 300/170, 0.1, 100);
+const oniCamera = new THREE.PerspectiveCamera(75, 250/150, 0.1, 100);
 
-// --- 爆光ライティング（影なし） ---
-const ambientLight = new THREE.AmbientLight(0xffffff, 1.5); // 全体を均一に明るく
-scene.add(ambientLight);
-const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
-mainLight.position.set(0, 50, 0);
-scene.add(mainLight);
+// 3. 地面（マス目をつけて「動いている感」を出す）
+const grid = new THREE.GridHelper(200, 50, 0xff0000, 0x888888);
+scene.add(grid);
 
-// --- 建築と家具（明るい色） ---
-const obstacles = [];
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({color: 0xcccccc}));
-floor.rotation.x = -Math.PI/2; scene.add(floor);
-
-function addBox(w, h, d, x, z, color) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({color}));
+// 4. 物体（光の影響を受けない MeshBasicMaterial を使用）
+function addObj(w, h, d, x, z, color) {
+    const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshBasicMaterial({ color: color })
+    );
     mesh.position.set(x, h/2, z);
     scene.add(mesh);
-    obstacles.push({xMin: x-w/2, xMax: x+w/2, zMin: z-d/2, zMax: z+d/2});
+    return mesh;
 }
 
-// 外壁
-addBox(100, 10, 1, 0, -50, 0x999999); addBox(100, 10, 1, 0, 50, 0x999999);
-addBox(1, 10, 100, -50, 0, 0x999999); addBox(1, 10, 100, 50, 0, 0x999999);
+// わかりやすい目印を配置
+addObj(5, 5, 5, -20, -20, 0x0000ff); // 青い箱
+addObj(5, 10, 5, 20, -20, 0x00ff00); // 緑の柱
+addObj(10, 15, 2, 0, -40, 0x00aaff); // ゴールの壁
 
-// 家具（目立つ色と形）
-addBox(6, 4, 3, -20, -20, 0x5555ff); // オフィスエリア（青い棚）
-addBox(4, 5, 4, 20, -20, 0xffffff);  // キッチンエリア（白い冷蔵庫）
-addBox(8, 2, 4, 20, -5, 0xaaaaaa);   // ステンレス台
-addBox(4, 7, 15, 20, 25, 0x8b4513);  // 倉庫（巨大な茶色の棚）
+// カギ（黄色い玉）
+const key = new THREE.Mesh(new THREE.SphereGeometry(1), new THREE.MeshBasicMaterial({color: 0xffff00}));
+key.position.set(0, 1, -20);
+scene.add(key);
 
-// カギと扉
-let keysArray = [];
-function spawnKeys() {
-    const pos = [[-20, -20], [20, -15], [20, 30]];
-    pos.forEach(p => {
-        const k = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), new THREE.MeshBasicMaterial({color:0xffff00}));
-        k.position.set(p[0], 2, p[1]); scene.add(k); keysArray.push(k);
-    });
-}
-const exitDoor = new THREE.Mesh(new THREE.BoxGeometry(6, 9, 1), new THREE.MeshBasicMaterial({color:0x00aaff}));
-exitDoor.position.set(0, 4.5, -49); scene.add(exitDoor);
-
-const oni = new THREE.Mesh(new THREE.BoxGeometry(2, 5, 2), new THREE.MeshBasicMaterial({color:0x000000}));
+// 鬼（黒いデカい箱）
+const oni = new THREE.Mesh(new THREE.BoxGeometry(3, 6, 3), new THREE.MeshBasicMaterial({color: 0x000000}));
 scene.add(oni);
 
-// --- 操作と更新 ---
-let gameState = "PLAYING", keysFound = 0, stamina = 100, playerPos = new THREE.Vector3(0, 2, 30), yaw = 0, pitch = 0;
-const keyMap = {};
-window.addEventListener('keydown', e => keyMap[e.code] = true);
-window.addEventListener('keyup', e => keyMap[e.code] = false);
-document.addEventListener('click', () => { if(gameState==="PLAYING") document.body.requestPointerLock(); });
-document.addEventListener('mousemove', e => {
-    if(document.pointerLockElement === document.body && gameState==="PLAYING") {
-        yaw -= e.movementX * 0.002; pitch = Math.max(-1.5, Math.min(1.5, pitch - e.movementY * 0.002));
+// 5. 操作
+let playerPos = new THREE.Vector3(0, 2, 20); // プレイヤーの初期位置
+let yaw = 0, pitch = 0;
+
+document.addEventListener('click', () => document.body.requestPointerLock());
+document.addEventListener('mousemove', (e) => {
+    if (document.pointerLockElement === document.body) {
+        yaw -= e.movementX * 0.002;
+        pitch -= e.movementY * 0.002;
     }
 });
 
+const keys = {};
+window.addEventListener('keydown', (e) => keys[e.code] = true);
+window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+// 6. ループ
 function animate() {
     requestAnimationFrame(animate);
-    if(gameState !== "PLAYING") return;
 
-    let speed = keyMap['ShiftLeft'] && stamina > 0 ? 0.3 : 0.15;
-    stamina = keyMap['ShiftLeft'] && stamina > 0 ? stamina - 0.5 : Math.min(100, stamina + 0.3);
-    document.getElementById('stamina-fill').style.width = stamina + "%";
-
+    // 移動
     const move = new THREE.Vector3();
-    if(keyMap['KeyW']) move.z -= 1; if(keyMap['KeyS']) move.z += 1;
-    if(keyMap['KeyA']) move.x -= 1; if(keyMap['KeyD']) move.x += 1;
-    move.applyAxisAngle(new THREE.Vector3(0,1,0), yaw).normalize().multiplyScalar(speed);
-
-    if(!checkCol(playerPos.x + move.x, playerPos.z)) playerPos.x += move.x;
-    if(!checkCol(playerPos.x, playerPos.z + move.z)) playerPos.z += move.z;
+    if (keys['KeyW']) move.z -= 0.2;
+    if (keys['KeyS']) move.z += 0.2;
+    if (keys['KeyA']) move.x -= 0.2;
+    if (keys['KeyD']) move.x += 0.2;
+    move.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    playerPos.add(move);
 
     camera.position.copy(playerPos);
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
 
-    // 鬼の動き
-    oni.position.lerp(playerPos, 0.015 + (keysFound * 0.005));
-    oni.position.y = 2.5;
-    oniCamera.position.set(oni.position.x, 4, oni.position.z);
-    oniCamera.lookAt(playerPos);
+    // 鬼が追いかけてくる
+    oni.position.lerp(playerPos, 0.01);
+    oni.position.y = 3;
 
-    keysArray.forEach(k => { if(k.visible && playerPos.distanceTo(k.position) < 2) { k.visible = false; keysFound++; document.getElementById('key-count').innerText = keysFound + " / 3"; }});
-    if(playerPos.distanceTo(oni.position) < 2.5) endGame("GAME OVER (CAUGHT)");
-    if(keysFound >= 3 && playerPos.distanceTo(exitDoor.position) < 4) endGame("SUCCESS! ESCAPED");
+    // 鬼の視界（右上）
+    oniCamera.position.copy(oni.position);
+    oniCamera.position.y = 5;
+    oniCamera.lookAt(playerPos);
 
     renderer.render(scene, camera);
     oniRenderer.render(scene, oniCamera);
 }
-
-function checkCol(nx, nz) {
-    if(Math.abs(nx) > 49 || Math.abs(nz) > 49) return true;
-    return obstacles.some(o => nx+0.8 > o.xMin && nx-0.8 < o.xMax && nz+0.8 > o.zMin && nz-0.8 < o.zMax);
-}
-
-function endGame(t) {
-    gameState = "OVER"; document.exitPointerLock();
-    const m = document.getElementById('msg'); m.innerHTML = t + "<br><small>Reloading...</small>"; m.style.display = "block";
-    setTimeout(() => location.reload(), 3000);
-}
-
-spawnKeys(); animate();
+animate();
 </script>
 </body>
 </html>

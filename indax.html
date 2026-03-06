@@ -2,168 +2,213 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>DUNGEON VENDER - 8bit Edition</title>
+    <title>DUNGEON VENDER - Golden Gacha Edition</title>
     <style>
-        /* レトロドット絵風のデザイン (CSS) */
         @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
         
         :root {
-            --bg: #000; --text: #0f0; --danger: #f00; --panel: #222;
+            --machine-color: #2c3e50;
+            --neon: #00f2ff;
         }
-        body {
-            background-color: var(--bg); color: var(--text);
-            font-family: 'DotGothic16', sans-serif;
-            display: flex; flex-direction: column; align-items: center;
-            image-rendering: pixelated;
-        }
-        #game-window {
-            width: 600px; border: 4px solid #fff; padding: 20px;
-            box-shadow: 10px 10px 0px #444; margin-top: 20px;
-        }
-        .stats { display: flex; justify-content: space-between; border-bottom: 2px ridge #eee; padding-bottom: 10px; margin-bottom: 10px; }
-        .log { height: 180px; overflow-y: auto; background: #111; padding: 10px; border: 2px inset #444; font-size: 14px; margin-bottom: 10px; }
+
+        body { background: #0a0a0a; color: #fff; font-family: 'DotGothic16', sans-serif; display: flex; flex-direction: column; align-items: center; }
         
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        button {
-            background: #444; color: #fff; border: 4px outset #666;
-            padding: 10px; cursor: pointer; font-family: 'DotGothic16', sans-serif;
+        /* 称号とステータス */
+        #header { width: 450px; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+        #title-banner { background: linear-gradient(45deg, #ffd700, #ff8c00); color: #000; padding: 5px 15px; border-radius: 5px; font-weight: bold; box-shadow: 0 0 10px #ffd700; }
+
+        /* 行列エリア */
+        #queue-area { height: 100px; width: 100%; display: flex; justify-content: center; align-items: flex-end; border-bottom: 4px solid #333; margin-bottom: 10px; }
+        .adventurer { font-size: 40px; margin: 0 5px; transition: 0.3s; position: relative; }
+        .vip { filter: drop-shadow(0 0 10px #fff); animation: vip-glow 1s infinite alternate; }
+        @keyframes vip-glow { from { filter: drop-shadow(0 0 5px #fff); } to { filter: drop-shadow(0 0 15px #ffd700); } }
+
+        /* 自販機：デコレーション強化 */
+        #vending-machine-outer {
+            padding: 10px; border-radius: 20px;
+            background: linear-gradient(135deg, #444, #222);
+            box-shadow: 0 0 20px var(--neon);
+            transition: 0.5s;
         }
-        button:active { border-style: inset; }
-        button:hover { background: #555; }
-        .btn-dark { color: #f0f; border-color: #606; }
+        #vending-machine-body {
+            width: 320px; background: var(--machine-color); border: 6px solid #111; border-radius: 10px;
+            padding: 15px; position: relative;
+        }
         
-        /* 自販機ビジュアル */
-        #vending-machine {
-            width: 80px; height: 120px; background: #33a; margin: 0 auto 20px;
-            border: 4px solid #fff; position: relative;
+        /* 装飾用ステッカー */
+        .sticker { position: absolute; font-size: 20px; opacity: 0.8; }
+        
+        #digital-display { background: #000; color: #0f0; padding: 10px; text-align: right; border: 3px inset #333; font-family: monospace; font-size: 1.2em; margin-bottom: 10px; }
+        
+        .shelf { background: #111; height: 120px; border: 4px inset #444; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; }
+        .item { font-size: 60px; filter: drop-shadow(0 0 10px rgba(255,255,255,0.3)); }
+        .price-tag { position: absolute; bottom: 5px; right: 5px; background: #ff0; color: #000; padding: 2px 8px; border: 2px solid #000; }
+
+        /* ガチャボタン */
+        .gacha-btn {
+            background: linear-gradient(to bottom, #ff00ff, #800080);
+            color: white; border: 4px outset #ff00ff; padding: 10px; width: 100%;
+            margin-top: 10px; font-size: 1.1em; cursor: pointer; text-shadow: 2px 2px #000;
         }
-        .light { width: 10px; height: 10px; background: #f00; position: absolute; top: 5px; right: 5px; border-radius: 50%; }
-        .fever { animation: flash 0.2s infinite; }
-        @keyframes flash { 0% { background: #f00; } 50% { background: #ff0; } 100% { background: #0f0; } }
+        .gacha-btn:hover { filter: brightness(1.2); }
+        .gacha-btn:disabled { background: #444; border-color: #666; cursor: not-allowed; }
+
+        /* UIと操作 */
+        .ui { width: 450px; margin-top: 20px; }
+        .log { height: 120px; background: rgba(0,0,0,0.8); border: 2px solid var(--neon); padding: 10px; overflow-y: scroll; font-size: 13px; color: #00f2ff; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        button:not(.gacha-btn) { background: #333; color: #eee; border: 3px outset #555; padding: 8px; cursor: pointer; font-family: 'DotGothic16'; }
+        
+        #durability-bar { height: 8px; background: #2ecc71; width: 100%; transition: 0.3s; margin-top: 5px; border: 1px solid #000; }
     </style>
 </head>
 <body>
 
-<div id="game-window">
-    <div id="vending-machine"><div id="status-light" class="light"></div></div>
-    
-    <div class="stats">
-        <div>GOLD:<span id="gold">500</span></div>
-        <div>冒険者HP:<span id="hp">100</span></div>
-        <div>評判:<span id="reputation">100</span>%</div>
+<div id="header">
+    <div id="title-banner">称号：名もなき鉄の塊</div>
+    <div>GOLD: <span id="gold-display" style="color:#ffd700; font-weight:bold;">300</span></div>
+</div>
+
+<div id="queue-area"></div>
+
+<div id="vending-machine-outer">
+    <div id="vending-machine-body">
+        <div class="sticker" style="top:-5px; left:-5px;">✨</div>
+        <div class="sticker" style="bottom:60px; right:5px;">🔥</div>
+        <div id="digital-display">000000</div>
+        
+        <div class="shelf">
+            <div class="item">🧪</div>
+            <div id="price-tag" class="price-tag">50G</div>
+        </div>
+        
+        <div id="durability-bar"></div>
+        
+        <button id="gacha-btn" class="gacha-btn" onclick="playGacha()">運命のガチャ (10000G)</button>
     </div>
+</div>
 
+<div class="ui">
+    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+        <span>評判: <span id="rep-display">100</span>%</span>
+        <span>適正単価: <span id="target-price">50</span>G</span>
+        <span>在庫: <span id="stock-display">10</span></span>
+    </div>
     <div class="log" id="log"></div>
-
     <div class="controls">
-        <button onclick="changePrice(0.8)">安売り支援(評判↑)</button>
-        <button onclick="changePrice(1.5)">ぼったくり(評判↓)</button>
-        <button class="btn-dark" onclick="sellToMonster()">魔物に武器を流す(闇ルート)</button>
-        <button onclick="maintenance()">自販機修理 (200G)</button>
-        <button id="move-btn" onclick="moveFloor()">深層へ移設 (1000G)</button>
+        <button onclick="changePrice(-10)">値下げ</button>
+        <button onclick="changePrice(10)">値上げ</button>
+        <button onclick="restock()">商品補充(100G)</button>
+        <button onclick="repair()">修理(300G)</button>
     </div>
 </div>
 
 <script>
     let state = {
-        gold: 500, hp: 100, rep: 100, floor: 1, 
-        durability: 100, price: 100, monsterMode: false
+        gold: 300, price: 50, rep: 100, stock: 10, 
+        durability: 100, targetPrice: 50, queue: []
     };
 
-    function log(m, color="#0f0") {
+    const vips = [
+        { char: "🤴", name: "王様", bonus: 50 },
+        { char: "⚔️", name: "勇者", bonus: 20 }
+    ];
+
+    const gachaPool = [
+        // あたり
+        { name: "黄金の塗装", type: "win", msg: "自販機が金ピカになった！評判が爆上がり！", effect: () => { state.rep = 200; document.documentElement.style.setProperty('--neon', '#ffd700'); document.documentElement.style.setProperty('--machine-color', '#d4af37'); } },
+        { name: "伝説の広告", type: "win", msg: "適正価格が100Gアップ！ブランド力がついた！", effect: () => { state.targetPrice += 100; } },
+        { name: "超合金ボディ", type: "win", msg: "耐久度が200%になった！喧嘩に強くなる！", effect: () => { state.durability = 200; document.getElementById('durability-bar').style.backgroundColor = '#3498db'; } },
+        // はずれ
+        { name: "偽造コイン", type: "fail", msg: "偽コインを掴まされた！所持金が半分になった...", effect: () => { state.gold = Math.floor(state.gold / 2); } },
+        { name: "爆発", type: "fail", msg: "ガチャが爆発！自販機が半壊した！", effect: () => { state.durability = 10; } },
+        { name: "不祥事", type: "fail", msg: "「この自販機、異物混入してる」と噂が広まり評判が1になった...", effect: () => { state.rep = 1; } }
+    ];
+
+    function log(m, c="#00f2ff") {
         const l = document.getElementById('log');
-        l.innerHTML = `<div style="color:${color}">> ${m}</div>` + l.innerHTML;
+        l.innerHTML = `<div style="color:${c}">> ${m}</div>` + l.innerHTML;
+        l.scrollTop = 0;
     }
+
+    function playGacha() {
+        if (state.gold < 10000) return;
+        state.gold -= 10000;
+        
+        const result = gachaPool[Math.floor(Math.random() * gachaPool.length)];
+        log(`【ガチャ結果：${result.name}】`, "#ff00ff");
+        log(result.msg, result.type === "win" ? "#ffd700" : "#ff4444");
+        result.effect();
+        updateDisplay();
+    }
+
+    function changePrice(diff) {
+        state.price = Math.max(10, state.price + diff);
+        document.getElementById('price-tag').innerText = state.price + "G";
+        updateDisplay();
+    }
+
+    function restock() { if(state.gold >= 100) { state.gold -= 100; state.stock = 10; log("商品を補充しました。"); } updateDisplay(); }
+    function repair() { if(state.gold >= 300) { state.gold -= 300; state.durability = 100; log("修理完了。"); } updateDisplay(); }
 
     function updateDisplay() {
-        document.getElementById('gold').innerText = state.gold;
-        document.getElementById('hp').innerText = Math.floor(state.hp);
-        document.getElementById('reputation').innerText = Math.floor(state.rep);
-        document.getElementById('status-light').className = state.durability < 30 ? 'light fever' : 'light';
+        document.getElementById('gold-display').innerText = state.gold;
+        document.getElementById('digital-display').innerText = String(state.gold).padStart(6, '0');
+        document.getElementById('rep-display').innerText = state.rep;
+        document.getElementById('target-price').innerText = state.targetPrice;
+        document.getElementById('stock-display').innerText = state.stock;
+        document.getElementById('durability-bar').style.width = (state.durability / (state.durability > 100 ? 2 : 1)) + "%";
+        document.getElementById('gacha-btn').disabled = state.gold < 10000;
+
+        const titles = [
+            { min: 0, t: "名もなき鉄の塊" }, { min: 70, t: "街の便利な箱" },
+            { min: 100, t: "王宮御用達" }, { min: 200, t: "伝説の聖遺物" }
+        ];
+        const title = titles.slice().reverse().find(t => state.targetPrice >= t.min);
+        document.getElementById('title-banner').innerText = "称号：" + title.t;
     }
 
-    function changePrice(rate) {
-        state.price = Math.round(state.price * rate);
-        log(`価格を${state.price}Gに変更。`);
+    function addAdventurer() {
+        if(state.queue.length > 10) return;
+        const isVip = Math.random() < 0.05;
+        const char = isVip ? vips[Math.floor(Math.random()*vips.length)].char : ["🤺", "🧙", "🏹", "🛡️", "🥷"][Math.floor(Math.random()*5)];
+        const el = document.createElement('div');
+        el.className = 'adventurer' + (isVip ? ' vip' : '');
+        el.innerText = char;
+        el.dataset.isVip = isVip;
+        document.getElementById('queue-area').appendChild(el);
+        state.queue.push(el);
     }
 
-    function sellToMonster() {
-        state.monsterMode = !state.monsterMode;
-        log(state.monsterMode ? "闇取引開始：魔物を強化します..." : "通常営業に戻ります。", "#f0f");
-    }
-
-    function maintenance() {
-        if(state.gold >= 200) {
-            state.gold -= 200; state.durability = 100;
-            log("自販機を修理しました。");
-        }
-        updateDisplay();
-    }
-
-    function moveFloor() {
-        if(state.gold >= 1000) {
-            state.gold -= 1000; state.floor++;
-            log(`第${state.floor}階層へ移設完了。`, "#ff0");
-        }
-        updateDisplay();
-    }
-
-    // メインループ
     setInterval(() => {
-        // 1. 来客判定 (評判が低いと客が来ない)
-        if (Math.random() * 100 > (100 - state.rep)) {
-            
-            if (state.monsterMode) {
-                // 魔物ルート
-                state.gold += state.price * 0.5;
-                state.hp -= 20;
-                log("魔物に毒薬を売却。冒険者が弱った！", "#f0f");
-            } else {
-                // 冒険者ルート
-                state.gold += state.price;
-                state.hp += 20;
-                // ぼったくりは評判を下げる
-                if(state.price > 150) state.rep -= 5;
-                log(`冒険者が購入。まいどあり！ (+${state.price}G)`);
+        if (state.rep > Math.random() * 100) addAdventurer();
+        
+        // 喧嘩
+        if (state.queue.length > 7) {
+            state.durability -= 2;
+            if(state.durability <= 0) { alert("大破しました！"); location.reload(); }
+        }
+
+        // 購入
+        if (state.queue.length > 0 && state.stock > 0) {
+            const buyer = state.queue.shift();
+            state.gold += state.price;
+            state.stock--;
+            if(buyer.dataset.isVip === "true") {
+                state.targetPrice += 20;
+                log("VIPが満足して去った！適正価格UP！", "#ffd700");
             }
+            buyer.remove();
         }
 
-        // 2. モンスター遭遇
-        let dmg = (state.floor * 10) + (state.monsterMode ? 20 : 0);
-        state.hp -= dmg;
-
-        // 3. 特殊イベント：自販機破壊
-        if (state.hp > 0 && state.hp < 20) {
-            log("冒険者が発狂！「金返せ！」自販機を叩いている！", "#f00");
-            state.durability -= 20;
-            state.gold = Math.max(0, state.gold - 50); // 小銭を奪われる
-        }
-
-        // 4. 全滅・遺品回収
-        if (state.hp <= 0) {
-            if (state.monsterMode) {
-                let loot = state.floor * 300;
-                state.gold += loot;
-                log(`計画通り！全滅した冒険者から${loot}G回収。`, "#f0f");
-            } else {
-                log("冒険者が全滅。悪評が広まった...", "#f00");
-                state.rep -= 20;
-            }
-            state.hp = 100 + (state.floor * 20);
-        }
-
-        // 5. 評判の自然回復
-        state.rep = Math.min(100, state.rep + 1);
-
-        // 自販機大破
-        if (state.durability <= 0) {
-            alert("自販機が破壊されました。ゲームオーバー。");
-            location.reload();
-        }
+        // 評判の自動補正（適正価格より高いと下がり、低いと上がる）
+        if(state.price > state.targetPrice) state.rep = Math.max(0, state.rep - 2);
+        else if(state.price < state.targetPrice) state.rep = Math.min(200, state.rep + 2);
 
         updateDisplay();
-    }, 3000);
-</script>
+    }, 2000);
 
+    updateDisplay();
+</script>
 </body>
 </html>

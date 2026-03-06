@@ -2,27 +2,28 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>廃ビルの鬼 - Detailed Interior</title>
+    <title>明るい廃ビルの脱出 - High Visibility Mode</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; overflow: hidden; background: #eee; font-family: 'Segoe UI', sans-serif; }
         #onime { 
             position: absolute; top: 20px; right: 20px; 
             width: 300px; height: 170px; 
-            border: 3px solid #222; outline: 1px solid #f00; z-index: 100;
-            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            border: 4px solid #fff; outline: 2px solid #ff0000; z-index: 100;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
-        #ui { position: absolute; top: 20px; left: 20px; color: white; pointer-events: none; text-shadow: 2px 2px 2px #000; }
-        #msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: red; font-size: 40px; font-weight: bold; display: none; text-align: center; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; }
-        .stamina-bar { width: 200px; height: 8px; background: #222; border: 1px solid #666; margin-top: 5px; }
-        #stamina-fill { width: 100%; height: 100%; background: #00ffaa; }
-        .crosshair { position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; border: 1px solid rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); }
+        #ui { position: absolute; top: 20px; left: 20px; color: #222; pointer-events: none; font-weight: bold; }
+        #msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 40px; font-weight: bold; display: none; text-align: center; background: rgba(255,0,0,0.8); padding: 30px; border-radius: 20px; z-index: 1000; }
+        .stamina-bar { width: 200px; height: 12px; background: #ccc; border: 2px solid #222; margin-top: 5px; }
+        #stamina-fill { width: 100%; height: 100%; background: #00cc88; }
+        .crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; border: 2px solid #ff0000; border-radius: 50%; transform: translate(-50%, -50%); }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h2 id="area-name">LOADING...</h2>
-        <div>KEYS: <span id="key-count" style="color: yellow;">0 / 3</span></div>
+        <h2 id="area-name">BRIGHT COMPLEX</h2>
+        <div style="font-size: 1.2em;">KEYS: <span id="key-count" style="color: #d4a017;">0 / 3</span></div>
         <div class="stamina-bar"><div id="stamina-fill"></div></div>
+        <p>明るい場所では鬼もあなたをすぐに見つけます！</p>
     </div>
     <div id="onime"></div>
     <div id="msg"></div>
@@ -35,15 +36,12 @@
 <script type="module">
 import * as THREE from 'three';
 
-// --- 初期設定 ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050505);
-scene.fog = new THREE.FogExp2(0x050505, 0.04);
+scene.background = new THREE.Color(0xdddddd); // 背景を明るいグレーに
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.toneMapping = THREE.ReinhardToneMapping;
 document.body.appendChild(renderer.domElement);
 
 const oniRenderer = new THREE.WebGLRenderer({ antialias: true });
@@ -53,78 +51,41 @@ document.getElementById('onime').appendChild(oniRenderer.domElement);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const oniCamera = new THREE.PerspectiveCamera(75, 300/170, 0.1, 100);
 
-// --- 変数 ---
-let gameState = "PLAYING";
-let keysFound = 0;
-let stamina = 100;
-let playerPos = new THREE.Vector3(0, 1.7, 20);
-let yaw = 0, pitch = 0;
+// --- 強力なライティング ---
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2); // 空からの光
+scene.add(hemiLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.0); // 太陽のような直射光
+dirLight.position.set(20, 50, 20);
+dirLight.castShadow = true;
+dirLight.shadow.camera.left = -30; dirLight.shadow.camera.right = 30;
+dirLight.shadow.camera.top = 30; dirLight.shadow.camera.bottom = -30;
+scene.add(dirLight);
+
+// --- 建築と家具 ---
 const obstacles = [];
-let keysArray = [];
-
-// --- 家具作成関数 (リアルな質感) ---
-function createProp(w, h, d, x, y, z, color, metal, rough, name="") {
-    const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough })
-    );
-    mesh.position.set(x, y + h/2, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    obstacles.push({ xMin: x-w/2, xMax: x+w/2, zMin: z-d/2, zMax: z+d/2, name });
-    return mesh;
-}
-
-// --- マップ構築 ---
-// 床
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({color: 0x333333, roughness: 0.3}));
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({color: 0xeeeeee, roughness: 0.1}));
 floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 
-// エリア1: オフィス (左奥)
-createProp(4, 3, 2, -15, 0, -15, 0x222222, 0.8, 0.2); // スチールキャビネット
-createProp(2, 1, 1, -12, 0, -15, 0x443322, 0.1, 0.8); // 机
-
-// エリア2: キッチン/食堂 (右奥)
-createProp(1.5, 4, 1.5, 15, 0, -15, 0xeeeeee, 0.9, 0.1); // 冷蔵庫
-createProp(5, 1.2, 1, 15, 0, -10, 0x888888, 1.0, 0.1); // ステンレス調理台
-
-// エリア3: 物置/倉庫 (手前)
-createProp(1, 6, 8, 10, 0, 10, 0x332211, 0.0, 0.9); // 木製の巨大な棚
-
-// 外壁
-const wallMat = new THREE.MeshStandardMaterial({color: 0x1a1a1a});
-function wall(x, z, w, d) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 10, d), wallMat);
-    m.position.set(x, 5, z); m.castShadow = true; m.receiveShadow = true;
-    scene.add(m);
+function addProp(w, h, d, x, z, color, m=0.5, r=0.5) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({color, metalness:m, roughness:r}));
+    mesh.position.set(x, h/2, z); mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
     obstacles.push({xMin: x-w/2, xMax: x+w/2, zMin: z-d/2, zMax: z+d/2});
 }
-wall(0, -25, 50, 1); wall(0, 25, 50, 1); wall(25, 0, 1, 50); wall(-25, 0, 1, 50);
 
-// 電灯
-const lightPoints = [[-15,-15,0xaaaaff], [15,-15,0xffaaaa], [10,10,0xffffaa], [0,20,0xffffff]];
-lightPoints.forEach(p => {
-    const lp = new THREE.PointLight(p[2], 20, 30);
-    lp.position.set(p[0], 8, p[1]); lp.castShadow = true; scene.add(lp);
-});
+// 家具の配置（明るい色味）
+addProp(4, 3, 2, -15, -15, 0xcccccc, 0.9, 0.1); // オフィス：シルバー棚
+addProp(2, 4, 2, 15, -15, 0xffffff, 1.0, 0.0);  // キッチン：白い冷蔵庫
+addProp(6, 1.5, 3, 15, -8, 0xaaaaaa, 0.8, 0.2); // 調理台
+addProp(2, 6, 8, 10, 15, 0x8b4513, 0.0, 1.0);  // 倉庫：茶色の巨大棚
+addProp(30, 8, 1, 0, -25, 0x999999); // 奥の壁
 
-// カギと脱出扉
-function spawnKeys() {
-    const pos = [[-15, -15], [15, -13], [10, 12]];
-    pos.forEach(p => {
-        const k = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.1), new THREE.MeshStandardMaterial({color:0xffff00, emissive:0xffaa00}));
-        k.position.set(p[0], 1.5, p[1]); scene.add(k); keysArray.push(k);
-    });
-}
-const exitDoor = new THREE.Mesh(new THREE.BoxGeometry(4, 7, 0.5), new THREE.MeshStandardMaterial({color:0x00ffff, emissive:0x004444}));
-exitDoor.position.set(0, 3.5, -24.5); scene.add(exitDoor);
+// --- ゲーム制御 ---
+let gameState = "PLAYING", keysFound = 0, stamina = 100;
+let playerPos = new THREE.Vector3(0, 1.7, 20), yaw = 0, pitch = 0;
+let keysArray = [];
 
-// 鬼
-const oni = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3.5, 1.5), new THREE.MeshStandardMaterial({color:0x000000}));
-scene.add(oni);
-
-// --- 操作・更新 ---
 const keyMap = {};
 window.addEventListener('keydown', e => keyMap[e.code] = true);
 window.addEventListener('keyup', e => keyMap[e.code] = false);
@@ -135,13 +96,26 @@ document.addEventListener('mousemove', e => {
     }
 });
 
+// カギと扉
+function spawnKeys() {
+    const pos = [[-15, -15], [15, -13], [10, 12]];
+    pos.forEach(p => {
+        const k = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.15), new THREE.MeshStandardMaterial({color:0xffcc00, emissive:0xffaa00}));
+        k.position.set(p[0], 1.2, p[1]); scene.add(k); keysArray.push(k);
+    });
+}
+const exitDoor = new THREE.Mesh(new THREE.BoxGeometry(5, 8, 0.6), new THREE.MeshStandardMaterial({color:0x00ffff, emissive:0x008888}));
+exitDoor.position.set(0, 4, -24.4); scene.add(exitDoor);
+
+const oni = new THREE.Mesh(new THREE.BoxGeometry(1.8, 4, 1.8), new THREE.MeshStandardMaterial({color:0x111111}));
+scene.add(oni);
+
 function animate() {
     requestAnimationFrame(animate);
     if(gameState !== "PLAYING") return;
 
-    // 移動
-    let speed = keyMap['ShiftLeft'] && stamina > 0 ? 0.25 : 0.12;
-    stamina = keyMap['ShiftLeft'] && stamina > 0 ? stamina - 0.6 : Math.min(100, stamina + 0.3);
+    let speed = keyMap['ShiftLeft'] && stamina > 0 ? 0.28 : 0.15;
+    stamina = keyMap['ShiftLeft'] && stamina > 0 ? stamina - 0.7 : Math.min(100, stamina + 0.4);
     document.getElementById('stamina-fill').style.width = stamina + "%";
 
     const move = new THREE.Vector3();
@@ -155,35 +129,28 @@ function animate() {
     camera.position.copy(playerPos);
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
 
-    // エリア名判定
-    let area = "HALLWAY";
-    if(playerPos.x < 0 && playerPos.z < 0) area = "OFFICE AREA";
-    else if(playerPos.x > 0 && playerPos.z < 0) area = "KITCHEN & DINING";
-    else if(playerPos.z > 0) area = "STORAGE AREA";
-    document.getElementById('area-name').innerText = area;
-
-    // 鬼のAIとカメラ
-    oni.position.lerp(playerPos, 0.015 + (keysFound * 0.005));
-    oni.position.y = 1.75;
+    oni.position.lerp(playerPos, 0.015 + (keysFound * 0.006));
+    oni.position.y = 2;
     oniCamera.position.copy(oni.position);
+    oniCamera.position.y = 3.5;
     oniCamera.lookAt(playerPos);
 
-    // 判定
-    keysArray.forEach(k => { if(k.visible && playerPos.distanceTo(k.position) < 1.5) { k.visible = false; keysFound++; document.getElementById('key-count').innerText = keysFound + " / 3"; }});
-    if(playerPos.distanceTo(oni.position) < 2) endGame("CAUGHT BY ONI");
-    if(keysFound >= 3 && playerPos.distanceTo(exitDoor.position) < 3) endGame("ESCAPED");
+    keysArray.forEach(k => { if(k.visible && playerPos.distanceTo(k.position) < 1.8) { k.visible = false; keysFound++; document.getElementById('key-count').innerText = keysFound + " / 3"; }});
+    if(playerPos.distanceTo(oni.position) < 2.2) endGame("ONI CAUGHT YOU");
+    if(keysFound >= 3 && playerPos.distanceTo(exitDoor.position) < 3.5) endGame("ESCAPE SUCCESS!");
 
     renderer.render(scene, camera);
     oniRenderer.render(scene, oniCamera);
 }
 
 function checkCol(nx, nz) {
-    return obstacles.some(o => nx+0.6 > o.xMin && nx-0.6 < o.xMax && nz+0.6 > o.zMin && nz-0.6 < o.zMax);
+    if(Math.abs(nx) > 24.5 || Math.abs(nz) > 24.5) return true;
+    return obstacles.some(o => nx+0.7 > o.xMin && nx-0.7 < o.xMax && nz+0.7 > o.zMin && nz-0.7 < o.zMax);
 }
 
 function endGame(t) {
     gameState = "OVER"; document.exitPointerLock();
-    const m = document.getElementById('msg'); m.innerHTML = t + "<br><small>Restarting in 3s...</small>"; m.style.display = "block";
+    const m = document.getElementById('msg'); m.innerHTML = t + "<br><small>Restarting...</small>"; m.style.display = "block";
     setTimeout(() => location.reload(), 3000);
 }
 

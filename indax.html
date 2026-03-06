@@ -2,213 +2,203 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>DUNGEON VENDER - Golden Gacha Edition</title>
+    <title>Mansion Escape: Shift to Dash</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
-        
-        :root {
-            --machine-color: #2c3e50;
-            --neon: #00f2ff;
-        }
-
-        body { background: #0a0a0a; color: #fff; font-family: 'DotGothic16', sans-serif; display: flex; flex-direction: column; align-items: center; }
-        
-        /* 称号とステータス */
-        #header { width: 450px; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
-        #title-banner { background: linear-gradient(45deg, #ffd700, #ff8c00); color: #000; padding: 5px 15px; border-radius: 5px; font-weight: bold; box-shadow: 0 0 10px #ffd700; }
-
-        /* 行列エリア */
-        #queue-area { height: 100px; width: 100%; display: flex; justify-content: center; align-items: flex-end; border-bottom: 4px solid #333; margin-bottom: 10px; }
-        .adventurer { font-size: 40px; margin: 0 5px; transition: 0.3s; position: relative; }
-        .vip { filter: drop-shadow(0 0 10px #fff); animation: vip-glow 1s infinite alternate; }
-        @keyframes vip-glow { from { filter: drop-shadow(0 0 5px #fff); } to { filter: drop-shadow(0 0 15px #ffd700); } }
-
-        /* 自販機：デコレーション強化 */
-        #vending-machine-outer {
-            padding: 10px; border-radius: 20px;
-            background: linear-gradient(135deg, #444, #222);
-            box-shadow: 0 0 20px var(--neon);
-            transition: 0.5s;
-        }
-        #vending-machine-body {
-            width: 320px; background: var(--machine-color); border: 6px solid #111; border-radius: 10px;
-            padding: 15px; position: relative;
-        }
-        
-        /* 装飾用ステッカー */
-        .sticker { position: absolute; font-size: 20px; opacity: 0.8; }
-        
-        #digital-display { background: #000; color: #0f0; padding: 10px; text-align: right; border: 3px inset #333; font-family: monospace; font-size: 1.2em; margin-bottom: 10px; }
-        
-        .shelf { background: #111; height: 120px; border: 4px inset #444; display: flex; justify-content: center; align-items: center; position: relative; overflow: hidden; }
-        .item { font-size: 60px; filter: drop-shadow(0 0 10px rgba(255,255,255,0.3)); }
-        .price-tag { position: absolute; bottom: 5px; right: 5px; background: #ff0; color: #000; padding: 2px 8px; border: 2px solid #000; }
-
-        /* ガチャボタン */
-        .gacha-btn {
-            background: linear-gradient(to bottom, #ff00ff, #800080);
-            color: white; border: 4px outset #ff00ff; padding: 10px; width: 100%;
-            margin-top: 10px; font-size: 1.1em; cursor: pointer; text-shadow: 2px 2px #000;
-        }
-        .gacha-btn:hover { filter: brightness(1.2); }
-        .gacha-btn:disabled { background: #444; border-color: #666; cursor: not-allowed; }
-
-        /* UIと操作 */
-        .ui { width: 450px; margin-top: 20px; }
-        .log { height: 120px; background: rgba(0,0,0,0.8); border: 2px solid var(--neon); padding: 10px; overflow-y: scroll; font-size: 13px; color: #00f2ff; }
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        button:not(.gacha-btn) { background: #333; color: #eee; border: 3px outset #555; padding: 8px; cursor: pointer; font-family: 'DotGothic16'; }
-        
-        #durability-bar { height: 8px; background: #2ecc71; width: 100%; transition: 0.3s; margin-top: 5px; border: 1px solid #000; }
+        body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        canvas { image-rendering: pixelated; border: 4px solid #555; width: 800px; height: 600px; }
+        #ui { position: absolute; top: 20px; color: #fff; font-family: 'Arial', sans-serif; pointer-events: none; text-align: center; text-shadow: 2px 2px #000; }
+        #key-status { font-size: 26px; color: #ffd700; font-weight: bold; }
+        .stamina-container { position: absolute; bottom: 30px; width: 300px; height: 6px; background: #222; border: 1px solid #555; }
+        #stamina-bar { width: 100%; height: 100%; background: #eee; box-shadow: 0 0 10px #fff; }
+        #controls-hint { position: absolute; top: 60px; color: #aaa; font-size: 14px; }
     </style>
 </head>
 <body>
-
-<div id="header">
-    <div id="title-banner">称号：名もなき鉄の塊</div>
-    <div>GOLD: <span id="gold-display" style="color:#ffd700; font-weight:bold;">300</span></div>
-</div>
-
-<div id="queue-area"></div>
-
-<div id="vending-machine-outer">
-    <div id="vending-machine-body">
-        <div class="sticker" style="top:-5px; left:-5px;">✨</div>
-        <div class="sticker" style="bottom:60px; right:5px;">🔥</div>
-        <div id="digital-display">000000</div>
-        
-        <div class="shelf">
-            <div class="item">🧪</div>
-            <div id="price-tag" class="price-tag">50G</div>
-        </div>
-        
-        <div id="durability-bar"></div>
-        
-        <button id="gacha-btn" class="gacha-btn" onclick="playGacha()">運命のガチャ (10000G)</button>
+    <div id="ui">
+        <div id="key-status">Keys: 0 / 3</div>
+        <div id="status">Shiftキーでダッシュして逃げろ</div>
+        <div id="controls-hint">矢印キー: 移動 | Shift: ダッシュ | Z: 化ける | X: 解除</div>
     </div>
-</div>
-
-<div class="ui">
-    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-        <span>評判: <span id="rep-display">100</span>%</span>
-        <span>適正単価: <span id="target-price">50</span>G</span>
-        <span>在庫: <span id="stock-display">10</span></span>
-    </div>
-    <div class="log" id="log"></div>
-    <div class="controls">
-        <button onclick="changePrice(-10)">値下げ</button>
-        <button onclick="changePrice(10)">値上げ</button>
-        <button onclick="restock()">商品補充(100G)</button>
-        <button onclick="repair()">修理(300G)</button>
-    </div>
-</div>
+    <div class="stamina-container"><div id="stamina-bar"></div></div>
+    <canvas id="game"></canvas>
 
 <script>
-    let state = {
-        gold: 300, price: 50, rep: 100, stock: 10, 
-        durability: 100, targetPrice: 50, queue: []
-    };
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const GW = 320; const GH = 240;
+canvas.width = GW; canvas.height = GH;
+const TILE = 20;
 
-    const vips = [
-        { char: "🤴", name: "王様", bonus: 50 },
-        { char: "⚔️", name: "勇者", bonus: 20 }
-    ];
+const world = [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,1,1,1,1,0,2,2,2,0,1,1,1,1,1,1,1,1,1,0,2,2,2,2,2,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+    [0,1,0,0,1,0,2,2,2,0,1,0,0,0,0,0,0,0,1,0,2,2,2,2,2,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0],
+    [0,1,0,2,2,2,2,2,2,2,1,0,2,2,2,2,2,0,1,1,1,1,1,1,1,1,1,0,2,2,2,2,2,2,2,2,2,0,1,0],
+    [0,1,0,2,2,2,2,2,2,2,1,0,2,2,2,2,2,0,0,0,0,0,0,0,1,0,0,0,2,2,2,2,2,2,2,2,2,0,1,0],
+    [0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,0,2,2,2,2,2,0,1,0,2,2,2,2,0,0,0,0,0,0,0,0,1,0],
+    [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,0,1,0,2,2,2,2,0,2,2,2,2,2,2,0,1,0],
+    [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,1,0,0,2,2,2,2,2,2,0,1,0],
+    [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+    [0,1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0],
+    [0,2,2,1,2,2,2,0,1,1,1,0,2,1,2,2,2,0,1,1,1,0,2,2,2,1,1,1,0,2,1,2,2,2,0,1,1,1,2,0],
+    [0,2,2,1,2,2,2,0,1,0,1,0,2,1,2,2,2,0,1,0,1,0,2,2,2,1,0,1,0,2,1,2,2,2,0,1,0,1,2,0],
+    [0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+];
 
-    const gachaPool = [
-        // あたり
-        { name: "黄金の塗装", type: "win", msg: "自販機が金ピカになった！評判が爆上がり！", effect: () => { state.rep = 200; document.documentElement.style.setProperty('--neon', '#ffd700'); document.documentElement.style.setProperty('--machine-color', '#d4af37'); } },
-        { name: "伝説の広告", type: "win", msg: "適正価格が100Gアップ！ブランド力がついた！", effect: () => { state.targetPrice += 100; } },
-        { name: "超合金ボディ", type: "win", msg: "耐久度が200%になった！喧嘩に強くなる！", effect: () => { state.durability = 200; document.getElementById('durability-bar').style.backgroundColor = '#3498db'; } },
-        // はずれ
-        { name: "偽造コイン", type: "fail", msg: "偽コインを掴まされた！所持金が半分になった...", effect: () => { state.gold = Math.floor(state.gold / 2); } },
-        { name: "爆発", type: "fail", msg: "ガチャが爆発！自販機が半壊した！", effect: () => { state.durability = 10; } },
-        { name: "不祥事", type: "fail", msg: "「この自販機、異物混入してる」と噂が広まり評判が1になった...", effect: () => { state.rep = 1; } }
-    ];
+let player, onis, props, keysItems;
 
-    function log(m, c="#00f2ff") {
-        const l = document.getElementById('log');
-        l.innerHTML = `<div style="color:${c}">> ${m}</div>` + l.innerHTML;
-        l.scrollTop = 0;
+function init() {
+    player = { x: 30, y: 30, speed: 1.1, run: 2.2, stm: 100, isProp: false, type: null, keys: 0 };
+    // 鬼の速度をプレイヤーの1.2倍 (1.32) に設定
+    onis = [{ x: 600, y: 100, speed: 1.32, state: 'hunt', nextNode: null }];
+    props = [];
+    keysItems = [];
+
+    const colors = ['#5d4037', '#795548', '#4e342e'];
+    for(let i=0; i<30; i++) {
+        let rx, ry;
+        do { rx = Math.floor(Math.random()*40); ry = Math.floor(Math.random()*14); } while(world[ry][rx] === 0);
+        props.push({x: rx*TILE+4, y: ry*TILE+4, w:12, h:12, c:colors[i%3], alive:true, style: i%3});
     }
 
-    function playGacha() {
-        if (state.gold < 10000) return;
-        state.gold -= 10000;
-        
-        const result = gachaPool[Math.floor(Math.random() * gachaPool.length)];
-        log(`【ガチャ結果：${result.name}】`, "#ff00ff");
-        log(result.msg, result.type === "win" ? "#ffd700" : "#ff4444");
-        result.effect();
-        updateDisplay();
+    for(let i=0; i<3; i++) {
+        let rx, ry;
+        do { rx = Math.floor(Math.random()*35+3); ry = Math.floor(Math.random()*10+2); } while(world[ry][rx] === 0);
+        keysItems.push({x: rx*TILE+10, y: ry*TILE+10, collected: false});
     }
+    document.getElementById('key-status').innerText = `Keys: 0 / 3`;
+}
 
-    function changePrice(diff) {
-        state.price = Math.max(10, state.price + diff);
-        document.getElementById('price-tag').innerText = state.price + "G";
-        updateDisplay();
-    }
+const keys = {};
+window.onkeydown = e => keys[e.code] = true;
+window.onkeyup = e => keys[e.code] = false;
 
-    function restock() { if(state.gold >= 100) { state.gold -= 100; state.stock = 10; log("商品を補充しました。"); } updateDisplay(); }
-    function repair() { if(state.gold >= 300) { state.gold -= 300; state.durability = 100; log("修理完了。"); } updateDisplay(); }
-
-    function updateDisplay() {
-        document.getElementById('gold-display').innerText = state.gold;
-        document.getElementById('digital-display').innerText = String(state.gold).padStart(6, '0');
-        document.getElementById('rep-display').innerText = state.rep;
-        document.getElementById('target-price').innerText = state.targetPrice;
-        document.getElementById('stock-display').innerText = state.stock;
-        document.getElementById('durability-bar').style.width = (state.durability / (state.durability > 100 ? 2 : 1)) + "%";
-        document.getElementById('gacha-btn').disabled = state.gold < 10000;
-
-        const titles = [
-            { min: 0, t: "名もなき鉄の塊" }, { min: 70, t: "街の便利な箱" },
-            { min: 100, t: "王宮御用達" }, { min: 200, t: "伝説の聖遺物" }
-        ];
-        const title = titles.slice().reverse().find(t => state.targetPrice >= t.min);
-        document.getElementById('title-banner').innerText = "称号：" + title.t;
-    }
-
-    function addAdventurer() {
-        if(state.queue.length > 10) return;
-        const isVip = Math.random() < 0.05;
-        const char = isVip ? vips[Math.floor(Math.random()*vips.length)].char : ["🤺", "🧙", "🏹", "🛡️", "🥷"][Math.floor(Math.random()*5)];
-        const el = document.createElement('div');
-        el.className = 'adventurer' + (isVip ? ' vip' : '');
-        el.innerText = char;
-        el.dataset.isVip = isVip;
-        document.getElementById('queue-area').appendChild(el);
-        state.queue.push(el);
-    }
-
-    setInterval(() => {
-        if (state.rep > Math.random() * 100) addAdventurer();
-        
-        // 喧嘩
-        if (state.queue.length > 7) {
-            state.durability -= 2;
-            if(state.durability <= 0) { alert("大破しました！"); location.reload(); }
-        }
-
-        // 購入
-        if (state.queue.length > 0 && state.stock > 0) {
-            const buyer = state.queue.shift();
-            state.gold += state.price;
-            state.stock--;
-            if(buyer.dataset.isVip === "true") {
-                state.targetPrice += 20;
-                log("VIPが満足して去った！適正価格UP！", "#ffd700");
+function getPath(sx, sy, ex, ey) {
+    const start = {x: Math.floor(sx/TILE), y: Math.floor(sy/TILE)};
+    const end = {x: Math.floor(ex/TILE), y: Math.floor(ey/TILE)};
+    if(start.x === end.x && start.y === end.y) return null;
+    const q = [[start]], v = new Set([`${start.x},${start.y}`]);
+    while(q.length > 0) {
+        const p = q.shift(), c = p[p.length-1];
+        if(c.x === end.x && c.y === end.y) return p;
+        for(let d of [{x:0,y:1},{x:0,y:-1},{x:1,y:0},{x:-1,y:0}]) {
+            const nx = c.x+d.x, ny = c.y+d.y;
+            if(world[ny] && world[ny][nx]>0 && !v.has(`${nx},${ny}`)) {
+                v.add(`${nx},${ny}`); q.push([...p, {x:nx, y:ny}]);
             }
-            buyer.remove();
         }
+    }
+    return null;
+}
 
-        // 評判の自動補正（適正価格より高いと下がり、低いと上がる）
-        if(state.price > state.targetPrice) state.rep = Math.max(0, state.rep - 2);
-        else if(state.price < state.targetPrice) state.rep = Math.min(200, state.rep + 2);
+function update() {
+    // Shiftキー判定 (左Shift: ShiftLeft, 右Shift: ShiftRight)
+    const dash = (keys['ShiftLeft'] || keys['ShiftRight']) && player.stm > 0 && !player.isProp;
 
-        updateDisplay();
-    }, 2000);
+    if (keys['KeyZ'] && !player.isProp) {
+        const near = props.find(p => p.alive && Math.hypot(player.x - (p.x+6), player.y - (p.y+6)) < 18);
+        if (near) { player.isProp = true; player.type = near; player.x = near.x+6; player.y = near.y+6; }
+    }
+    if (keys['KeyX']) player.isProp = false;
 
-    updateDisplay();
+    if (!player.isProp) {
+        let s = dash ? player.run : player.speed;
+        player.stm = dash ? Math.max(0, player.stm-1.0) : Math.min(100, player.stm+0.5);
+        let nx = player.x, ny = player.y;
+        if (keys['ArrowUp']) ny -= s; if (keys['ArrowDown']) ny += s;
+        if (keys['ArrowLeft']) nx -= s; if (keys['ArrowRight']) nx += s;
+        if (world[Math.floor(ny/TILE)] && world[Math.floor(ny/TILE)][Math.floor(nx/TILE)] > 0) { player.x = nx; player.y = ny; }
+    }
+    document.getElementById('stamina-bar').style.width = player.stm + "%";
+
+    keysItems.forEach(k => {
+        if(!k.collected && Math.hypot(player.x-k.x, player.y-k.y) < 12) {
+            k.collected = true; player.keys++;
+            document.getElementById('key-status').innerText = `Keys: ${player.keys} / 3`;
+            onis.push({ x: 700, y: 200, speed: 1.32 + player.keys*0.1, state: 'hunt', nextNode: null });
+        }
+    });
+
+    if (player.keys === 3 && player.x < 50 && player.y < 50) { alert("Congratulations!"); init(); }
+
+    onis.forEach(o => {
+        const dist = Math.hypot(o.x - player.x, o.y - player.y);
+        o.state = (!player.isProp && dist < 120) ? 'chase' : 'hunt';
+        if (!o.nextNode) {
+            let t = (o.state === 'chase') ? {x:player.x, y:player.y} : {x: Math.random()*700+50, y: Math.random()*200+50};
+            const path = getPath(o.x, o.y, t.x, t.y);
+            if (path && path.length > 1) o.nextNode = path[1];
+        }
+        if (o.nextNode) {
+            const tx = o.nextNode.x*TILE+10, ty = o.nextNode.y*TILE+10;
+            const dx = tx-o.x, dy = ty-o.y, d = Math.hypot(dx,dy);
+            if (d>2) { o.x += (dx/d)*o.speed; o.y += (dy/d)*o.speed; } else o.nextNode = null;
+        }
+        if (dist < 12 && !player.isProp) { player.x = 30; player.y = 30; }
+    });
+}
+
+function drawProp(p) {
+    if(!p.alive) { ctx.fillStyle = '#111'; ctx.fillRect(p.x, p.y+8, 12, 4); return; }
+    ctx.fillStyle = p.c;
+    if(p.style === 0) { // テーブル
+        ctx.fillRect(p.x, p.y, 12, 3);
+        ctx.fillRect(p.x+1, p.y, 2, 11); ctx.fillRect(p.x+9, p.y, 2, 11);
+    } else if(p.style === 1) { // ソファ
+        ctx.fillRect(p.x, p.y+4, 12, 8);
+        ctx.fillRect(p.x, p.y+2, 2, 10); ctx.fillRect(p.x+10, p.y+2, 2, 10);
+        ctx.fillStyle = '#0003'; ctx.fillRect(p.x+2, p.y+4, 8, 2);
+    } else { // チェスト
+        ctx.fillRect(p.x, p.y, 12, 12);
+        ctx.fillStyle = '#0004'; ctx.fillRect(p.x+2, p.y+3, 8, 1); ctx.fillRect(p.x+2, p.y+8, 8, 1);
+        ctx.fillStyle = '#fff4'; ctx.fillRect(p.x+5, p.y+4, 2, 1); ctx.fillRect(p.x+5, p.y+9, 2, 1);
+    }
+}
+
+function draw() {
+    ctx.fillStyle = "#000"; ctx.fillRect(0,0,GW,GH);
+    ctx.save();
+    ctx.translate(Math.floor(GW/2 - player.x), Math.floor(GH/2 - player.y));
+
+    for(let y=0; y<world.length; y++) for(let x=0; x<world[0].length; x++) {
+        if(world[y][x] === 0) continue;
+        ctx.fillStyle = world[y][x] === 1 ? '#dcdcdc' : '#444';
+        ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+        ctx.strokeStyle = '#0001'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
+    }
+
+    ctx.fillStyle = 'rgba(0,120,255,0.4)'; ctx.fillRect(TILE, TILE, TILE*2, TILE*2);
+    keysItems.forEach(k => { if(!k.collected) { 
+        ctx.fillStyle = 'gold'; ctx.beginPath(); ctx.arc(k.x, k.y, 3.5, 0, 7); ctx.fill(); 
+    }});
+    props.forEach(p => drawProp(p));
+
+    if (player.isProp) {
+        drawProp({...player.type, x: player.x-6, y: player.y-6});
+    } else {
+        ctx.fillStyle = '#2980b9'; ctx.fillRect(player.x-4, player.y-7, 8, 13);
+        ctx.fillStyle = '#f3e5ab'; ctx.fillRect(player.x-2, player.y-5, 4, 3);
+    }
+
+    onis.forEach(o => {
+        ctx.fillStyle = '#c0392b'; ctx.fillRect(o.x-8, o.y-12, 16, 24);
+        ctx.fillStyle = '#fff'; ctx.fillRect(o.x-4, o.y-8, 2, 2); ctx.fillRect(o.x+2, o.y-8, 2, 2);
+    });
+    ctx.restore();
+
+    const grad = ctx.createRadialGradient(GW/2, GH/2, 10, GW/2, GH/2, 100);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, GW, GH);
+
+    update();
+    requestAnimationFrame(draw);
+}
+
+init();
+draw();
 </script>
 </body>
 </html>

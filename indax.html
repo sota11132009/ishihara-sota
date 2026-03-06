@@ -2,14 +2,14 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Mansion Escape: Hardcore Reset</title>
+    <title>Mansion Escape: The Gate</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { image-rendering: pixelated; border: 2px solid #333; width: 800px; height: 600px; }
+        canvas { image-rendering: pixelated; border: 2px solid #444; width: 800px; height: 600px; }
         #ui { position: absolute; top: 20px; color: #fff; font-family: 'Georgia', serif; pointer-events: none; text-align: center; }
         #key-status { font-size: 24px; color: #ffd700; text-shadow: 0 0 10px #000; }
-        #game-over { 
-            position: absolute; color: #f00; font-size: 40px; font-family: 'serif'; 
+        #msg-overlay { 
+            position: absolute; color: #fff; font-size: 40px; font-family: 'serif'; 
             display: none; text-align: center; background: rgba(0,0,0,0.8); 
             padding: 20px; border-radius: 10px; z-index: 10;
         }
@@ -19,7 +19,7 @@
 </head>
 <body>
     <div id="ui"><div id="key-status">KEYS: 0 / 3</div></div>
-    <div id="game-over">CAUGHT<br><span style="font-size: 16px; color: #666;">RESETTING WORLD...</span></div>
+    <div id="msg-overlay"></div>
     <div class="stamina-container"><div id="stamina-bar"></div></div>
     <canvas id="game"></canvas>
 
@@ -30,6 +30,7 @@ const GW = 320; const GH = 240;
 canvas.width = GW; canvas.height = GH;
 const TILE = 20;
 
+// マップ構成 (1:通路, 2:部屋, 0:壁)
 const world = [
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,1,1,1,1,0,2,2,2,0,1,1,1,1,1,1,1,1,1,0,2,2,2,2,2,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
@@ -43,34 +44,33 @@ const world = [
     [0,1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1,0],
     [0,2,2,1,2,2,2,0,1,1,1,0,2,1,2,2,2,0,1,1,1,0,2,2,2,1,1,1,0,2,1,2,2,2,0,1,1,1,2,0],
     [0,2,2,1,2,2,2,0,1,0,1,0,2,1,2,2,2,0,1,0,1,0,2,2,2,1,0,1,0,2,1,2,2,2,0,1,0,1,2,0],
-    [0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,0],
-    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] // 中央下に出口用通路
 ];
 
-let p, onis, props, keysItems, isDead = false;
+let p, onis, props, keysItems, isLocked = true;
+const exitPos = { x: 19 * TILE + 10, y: 13 * TILE + 10 };
 
-// 初期化（すべてをリセット）
 function init() {
-    isDead = false;
-    document.getElementById('game-over').style.display = 'none';
+    isLocked = true;
+    const overlay = document.getElementById('msg-overlay');
+    overlay.style.display = 'none';
     
-    // プレイヤー初期化
     p = { x: 30, y: 30, speed: 1.1, run: 2.2, stm: 100, isProp: false, type: null, keys: 0 };
-    
-    // 鬼初期化（1.1倍速）
     onis = [{ x: 600, y: 100, speed: 1.21, state: 'hunt', nextNode: null }];
+    props = []; 
+    keysItems = [];
     
-    // 家具と鍵のリセット
-    props = []; keysItems = [];
     const colors = ['#3d2b1f', '#4a3728', '#2a1a0f'];
     for(let i=0; i<25; i++) {
         let rx, ry;
-        do { rx = Math.floor(Math.random()*40); ry = Math.floor(Math.random()*14); } while(world[ry][rx] === 0);
+        do { rx = Math.floor(Math.random()*40); ry = Math.floor(Math.random()*13); } while(world[ry][rx] === 0);
         props.push({x: rx*TILE+4, y: ry*TILE+4, w:12, h:12, c:colors[i%3], alive:true, style: i%3});
     }
+    // 鍵をランダム配置
     for(let i=0; i<3; i++) {
         let rx, ry;
-        do { rx = Math.floor(Math.random()*35+3); ry = Math.floor(Math.random()*10+2); } while(world[ry][rx] === 0);
+        do { rx = Math.floor(Math.random()*36+2); ry = Math.floor(Math.random()*11+1); } while(world[ry][rx] === 0);
         keysItems.push({x: rx*TILE+10, y: ry*TILE+10, collected: false});
     }
     document.getElementById('key-status').innerText = `KEYS: 0 / 3`;
@@ -83,6 +83,7 @@ window.onkeyup = e => input[e.code] = false;
 function getPath(sx, sy, ex, ey) {
     const start = {x: Math.floor(sx/TILE), y: Math.floor(sy/TILE)};
     const end = {x: Math.floor(ex/TILE), y: Math.floor(ey/TILE)};
+    if(!world[end.y] || world[end.y][end.x] === 0) return null;
     const q = [[start]], v = new Set([`${start.x},${start.y}`]);
     while(q.length > 0) {
         const path = q.shift(), c = path[path.length-1];
@@ -98,7 +99,7 @@ function getPath(sx, sy, ex, ey) {
 }
 
 function update() {
-    if (isDead) return;
+    if (document.getElementById('msg-overlay').style.display === 'block') return;
     
     const dash = (input['ShiftLeft'] || input['ShiftRight']) && p.stm > 0 && !p.isProp;
     if (input['KeyZ'] && !p.isProp) {
@@ -117,14 +118,25 @@ function update() {
     }
     document.getElementById('stamina-bar').style.width = p.stm + "%";
 
+    // 鍵取得
     keysItems.forEach(k => {
         if(!k.collected && Math.hypot(p.x-k.x, p.y-k.y) < 12) {
             k.collected = true; p.keys++;
             document.getElementById('key-status').innerText = `KEYS: ${p.keys} / 3`;
-            onis.push({ x: 700, y: 200, speed: p.speed * 1.1 + p.keys*0.05, state: 'hunt', nextNode: null });
+            onis.push({ x: 100 + Math.random()*500, y: 100, speed: p.speed * 1.1 + p.keys*0.05, state: 'hunt', nextNode: null });
+            if(p.keys >= 3) isLocked = false;
         }
     });
 
+    // 脱出判定
+    if (!isLocked && Math.hypot(p.x - exitPos.x, p.y - exitPos.y) < 15) {
+        const ov = document.getElementById('msg-overlay');
+        ov.innerHTML = "ESCAPED<br><span style='font-size:16px; color:#ffd700;'>You survived the mansion.</span>";
+        ov.style.display = 'block';
+        setTimeout(init, 3000);
+    }
+
+    // 鬼の行動
     onis.forEach(o => {
         const dist = Math.hypot(o.x - p.x, o.y - p.y);
         o.state = (!p.isProp && dist < 120) ? 'chase' : 'hunt';
@@ -140,11 +152,11 @@ function update() {
             if (d>2) { o.x += (dx/d)*o.speed; o.y += (dy/d)*o.speed; } else o.nextNode = null;
         }
 
-        // 死亡判定
         if (dist < 10 && !p.isProp) {
-            isDead = true;
-            document.getElementById('game-over').style.display = 'block';
-            setTimeout(init, 1500); // 1.5秒後に完全リセット
+            const ov = document.getElementById('msg-overlay');
+            ov.innerHTML = "CAUGHT<br><span style='font-size:16px; color:#666;'>RESETTING WORLD...</span>";
+            ov.style.display = 'block';
+            setTimeout(init, 1500);
         }
     });
 }
@@ -154,19 +166,22 @@ function draw() {
     ctx.save();
     ctx.translate(Math.floor(GW/2 - p.x), Math.floor(GH/2 - p.y));
 
-    // 床
     for(let y=0; y<world.length; y++) for(let x=0; x<world[0].length; x++) {
         if(world[y][x] === 0) continue;
-        ctx.fillStyle = world[y][x] === 1 ? '#e0e0e0' : '#444';
+        ctx.fillStyle = world[y][x] === 1 ? '#dcdcdc' : '#444';
         ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
     }
 
-    // 鍵
+    // 脱出扉の描画
+    ctx.fillStyle = isLocked ? "#332211" : "#fff";
+    if (!isLocked) ctx.shadowBlur = 15, ctx.shadowColor = "#fff";
+    ctx.fillRect(18*TILE+10, 13*TILE+5, 30, 15);
+    ctx.shadowBlur = 0;
+
     keysItems.forEach(k => { if(!k.collected) { 
         ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(k.x, k.y, 3, 0, 7); ctx.fill(); 
     }});
     
-    // 家具
     props.forEach(pr => {
         ctx.fillStyle = pr.c;
         if(pr.style === 0) { ctx.fillRect(pr.x, pr.y, 12, 3); ctx.fillRect(pr.x+1, pr.y, 2, 11); ctx.fillRect(pr.x+9, pr.y, 2, 11); }
@@ -174,31 +189,24 @@ function draw() {
         else { ctx.fillRect(pr.x, pr.y, 12, 12); ctx.fillStyle="#0003"; ctx.fillRect(pr.x+2, pr.y+2, 8, 2); }
     });
 
-    // プレイヤー
     if (!p.isProp) {
         ctx.fillStyle = '#2980b9'; ctx.fillRect(p.x-4, p.y-8, 8, 14);
     } else {
         ctx.fillStyle = p.type.c; ctx.fillRect(p.x-6, p.y-6, 12, 12);
     }
 
-    // 鬼（影のようなエフェクト）
     onis.forEach(o => {
-        ctx.fillStyle = 'rgba(200,0,0,0.6)';
-        for(let i=0; i<3; i++) ctx.fillRect(o.x-8+Math.random()*2, o.y-12+Math.random()*2, 16, 24);
+        ctx.fillStyle = 'rgba(255,0,0,0.5)';
+        for(let i=0; i<2; i++) ctx.fillRect(o.x-8+Math.random()*3, o.y-12+Math.random()*3, 16, 24);
         ctx.fillStyle = '#fff'; ctx.fillRect(o.x-3, o.y-6, 2, 2); ctx.fillRect(o.x+1, o.y-6, 2, 2);
     });
     ctx.restore();
 
-    // リアルな視界演出
-    let flicker = (onis.some(o => Math.hypot(o.x-p.x, o.y-p.y) < 60) && Math.random() > 0.8) ? 20 : 0;
-    const grad = ctx.createRadialGradient(GW/2, GH/2, 10, GW/2, GH/2, 100 - flicker);
+    // 視界
+    const grad = ctx.createRadialGradient(GW/2, GH/2, 10, GW/2, GH/2, 100);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(1, 'rgba(0,0,0,1)');
     ctx.fillStyle = grad; ctx.fillRect(0,0,GW,GH);
-
-    if (isDead) {
-        ctx.fillStyle = 'rgba(255,0,0,0.3)'; ctx.fillRect(0,0,GW,GH);
-    }
 
     update();
     requestAnimationFrame(draw);

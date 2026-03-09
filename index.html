@@ -2,23 +2,26 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>The Gilded Mansion: Hiding</title>
+    <title>The Gilded Mansion: Final Edition</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
         canvas { image-rendering: pixelated; border: 4px solid #444; width: 960px; height: 720px; }
         #ui { position: absolute; top: 30px; color: #fff; font-family: 'Georgia', serif; pointer-events: none; width: 100%; text-align: center; }
         .info { font-size: 18px; text-shadow: 2px 2px #000; letter-spacing: 2px; }
         #ammo-bar { width: 120px; height: 6px; background: #222; margin: 8px auto; border: 1px solid #666; }
-        #ammo-inner { width: 100%; height: 100%; background: #c00; transition: width 0.3s; }
+        #ammo-inner { width: 100%; height: 100%; background: #c00; transition: width 0.1s; }
         #stealth-msg { color: #8af; font-size: 14px; margin-top: 5px; font-weight: bold; height: 20px; }
+        #boss-warning { color: #f00; font-size: 24px; font-weight: bold; display: none; text-shadow: 0 0 10px #f00; animation: flash 1s infinite; }
+        @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     </style>
 </head>
 <body>
     <div id="ui">
+        <div id="boss-warning">ANCIENT HORROR AWAKENED</div>
         <div class="info" id="key-status">KEYS: 0 / 5</div>
         <div id="ammo-bar"><div id="ammo-inner"></div></div>
         <div id="stealth-msg"></div>
-        <div id="ghost-count" style="color: #f44; font-size: 12px;">GHOSTS ACTIVE: 1</div>
+        <div id="ghost-count" style="color: #f44; font-size: 12px;">GHOSTS: 1</div>
     </div>
     <canvas id="game"></canvas>
 
@@ -31,40 +34,31 @@ canvas.width = GW; canvas.height = GH;
 const TILE = 24;
 const MAP_W = 60; const MAP_H = 60;
 
-let world = [], rooms = [], furniture = [];
+let world = [], rooms = [], furniture = [], rugs = [];
 let p, onis = [], bullets = [], keysItems = [], trail = [];
 let lastReloadTime = Date.now();
+let isBossFight = false;
 
 function drawKey(x, y) {
-    ctx.fillStyle = '#ffd700';
-    ctx.fillRect(x-1, y-4, 2, 6);
-    ctx.fillRect(x-3, y-6, 6, 3);
-    ctx.fillRect(x, y, 3, 1); ctx.fillRect(x, y+2, 3, 1);
+    ctx.fillStyle = '#ffd700'; ctx.fillRect(x-1, y-4, 2, 6);
+    ctx.fillRect(x-3, y-6, 6, 3); ctx.fillRect(x, y, 3, 1); ctx.fillRect(x, y+2, 3, 1);
 }
 
 function drawFurniture(f) {
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(f.x-TILE/2, f.y+2, TILE, TILE/2);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(f.x-TILE/2, f.y+2, TILE, TILE/2);
     ctx.fillStyle = f.color;
     if(f.type === 'sofa') {
-        ctx.fillRect(f.x-10, f.y-6, 20, 12);
-        ctx.fillStyle = '#422'; ctx.fillRect(f.x-10, f.y-10, 20, 4);
+        ctx.fillRect(f.x-10, f.y-6, 20, 12); ctx.fillStyle = '#422'; ctx.fillRect(f.x-10, f.y-10, 20, 4);
     } else {
-        ctx.fillRect(f.x-8, f.y-12, 16, 14);
-        ctx.fillStyle = '#000'; ctx.fillRect(f.x-6, f.y-6, 12, 1);
+        ctx.fillRect(f.x-8, f.y-12, 16, 14); ctx.fillStyle = '#000'; ctx.fillRect(f.x-6, f.y-6, 12, 1);
     }
 }
 
-function drawEntity(x, y, dir, type, color, alpha = 1) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(x, y);
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.ellipse(0, 2, 7, 3, 0, 0, Math.PI*2); ctx.fill();
-
+function drawEntity(x, y, dir, type, color, alpha = 1, scale = 1) {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.scale(scale, scale);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(0, 2, 7, 3, 0, 0, Math.PI*2); ctx.fill();
     if (type === 'oni') {
-        ctx.fillStyle = color; ctx.fillRect(-6, -24, 12, 24);
-        ctx.fillStyle = '#f00';
+        ctx.fillStyle = color; ctx.fillRect(-6, -24, 12, 24); ctx.fillStyle = '#f00';
         let ox = (dir === 'right' ? 2 : dir === 'left' ? -2 : 0);
         ctx.fillRect(-3+ox, -18, 2, 2); ctx.fillRect(1+ox, -18, 2, 2);
     } else {
@@ -77,30 +71,47 @@ function drawEntity(x, y, dir, type, color, alpha = 1) {
 
 function generateMansion() {
     world = Array.from({length: MAP_H}, () => new Array(MAP_W).fill(0));
-    rooms = [{x:5,y:5,w:12,h:12},{x:40,y:8,w:12,h:10},{x:8,y:40,w:10,h:12},{x:38,y:38,w:15,h:15},{x:25,y:25,w:8,h:8}];
+    rooms = [
+        {x:5, y:5, w:12, h:12, name:'Entrance'}, 
+        {x:40, y:8, w:12, h:10, name:'Library'},
+        {x:8, y:40, w:10, h:12, name:'Gallery'}, 
+        {x:38, y:38, w:15, h:15, name:'Grand Hall'}, 
+        {x:25, y:25, w:8, h:8, name:'Dining'}
+    ];
     rooms.forEach(r => {
         for(let py=r.y; py<r.y+r.h; py++) for(let px=r.x; px<r.x+r.w; px++) world[py][px] = 1;
+        rugs.push({x: (r.x+2)*TILE, y: (r.y+2)*TILE, w: (r.w-4)*TILE, h: (r.h-4)*TILE});
     });
     for(let i=0; i<rooms.length-1; i++) {
         let x = rooms[i].x+5, y = rooms[i].y+5, tx = rooms[i+1].x+5, ty = rooms[i+1].y+5;
-        while(x !== tx) { for(let o=-1; o<=1; o++) if(world[y+o]) world[y+o][x]=1; x += (x<tx?1:-1); }
-        while(y !== ty) { for(let o=-1; o<=1; o++) if(world[y][x+o]) world[y][x+o]=1; y += (y<ty?1:-1); }
+        while(x !== tx) { for(let o=0; o<=1; o++) if(world[y+o]) world[y+o][x]=1; x += (x<tx?1:-1); }
+        while(y !== ty) { for(let o=0; o<=1; o++) if(world[y][x+o]) world[y][x+o]=1; y += (y<ty?1:-1); }
     }
     furniture = [];
-    for(let i=0; i<150; i++) {
-        let rx = Math.floor(Math.random()*MAP_W), ry = Math.floor(Math.random()*MAP_H);
-        if(world[ry][rx] === 1) {
-            furniture.push({x: rx*TILE+12, y: ry*TILE+12, type: Math.random()>0.5?'sofa':'chest', color: Math.random()>0.5?'#532':'#321'});
+    rooms.forEach(r => {
+        for(let px = r.x+1; px < r.x+r.w-1; px += 4) {
+            furniture.push({x: px*TILE+12, y: r.y*TILE+10, type: 'chest', color: '#432'});
+            furniture.push({x: px*TILE+12, y: (r.y+r.h-1)*TILE+10, type: 'chest', color: '#321'});
         }
-    }
+        if(r.w > 8) {
+            furniture.push({x: (r.x + 4)*TILE, y: (r.y + r.h/2)*TILE, type: 'sofa', color: '#622'});
+            furniture.push({x: (r.x + r.w - 4)*TILE, y: (r.y + r.h/2)*TILE, type: 'sofa', color: '#622'});
+        }
+    });
 }
 
-function spawnOni() {
+function spawnOni(isBoss = false) {
     let r = rooms[Math.floor(Math.random()*rooms.length)];
-    onis.push({ x: r.x*TILE+20, y: r.y*TILE+20, speed: 1.1 * 1.25, dir: 'down', color: '#100', targetIdx: 0 });
+    onis.push({ 
+        x: r.x*TILE+20, y: r.y*TILE+20, speed: isBoss ? 1.7 : 1.35, 
+        dir: 'down', color: isBoss ? '#300' : '#100', 
+        isChasing: isBoss, targetIdx: trail.length - 1, isBoss, scale: isBoss ? 2.5 : 1
+    });
 }
 
 function init() {
+    isBossFight = false; rugs = [];
+    document.getElementById('boss-warning').style.display = 'none';
     generateMansion();
     p = { x: rooms[0].x*TILE+TILE*2, y: rooms[0].y*TILE+TILE*2, speed: 1.1, keys: 0, dir: 'down', ammo: 3, isHidden: false };
     onis = []; spawnOni();
@@ -110,112 +121,95 @@ function init() {
 
 function update() {
     const input = window.input || {};
-    const stealthUI = document.getElementById('stealth-msg');
-    
-    // 隠れる判定
+    let stealthUI = document.getElementById('stealth-msg');
     let nearFurniture = furniture.find(f => Math.hypot(p.x - f.x, p.y - f.y) < 15);
     if (nearFurniture && !p.isHidden) {
-        stealthUI.innerText = "PRESS [Z] TO HIDE";
+        stealthUI.innerText = "Z:HIDE";
         if (input['KeyZ']) { p.isHidden = true; p.x = nearFurniture.x; p.y = nearFurniture.y; }
     } else if (p.isHidden) {
-        stealthUI.innerText = "HIDDEN - PRESS [X] TO EXIT";
+        stealthUI.innerText = "HIDDEN - X:EXIT";
         if (input['KeyX']) p.isHidden = false;
-    } else {
-        stealthUI.innerText = "";
-    }
+    } else { stealthUI.innerText = ""; }
 
     if (!p.isHidden) {
-        let nx = p.x, ny = p.y, moved = false;
-        if (input['ArrowUp']) { ny -= p.speed; p.dir = 'up'; moved = true; }
-        else if (input['ArrowDown']) { ny += p.speed; p.dir = 'down'; moved = true; }
-        else if (input['ArrowLeft']) { nx -= p.speed; p.dir = 'left'; moved = true; }
-        else if (input['ArrowRight']) { nx += p.speed; p.dir = 'right'; moved = true; }
-
+        let nx = p.x, ny = p.y;
+        if (input['ArrowUp']) { ny -= p.speed; p.dir = 'up'; }
+        else if (input['ArrowDown']) { ny += p.speed; p.dir = 'down'; }
+        else if (input['ArrowLeft']) { nx -= p.speed; p.dir = 'left'; }
+        else if (input['ArrowRight']) { nx += p.speed; p.dir = 'right'; }
         if (world[Math.floor(ny/TILE)]?.[Math.floor(nx/TILE)] === 1) {
             p.x = nx; p.y = ny;
-            let lastT = trail[trail.length-1];
-            if(Math.hypot(p.x-lastT.x, p.y-lastT.y) > 15) {
-                trail.push({x:p.x, y:p.y});
-                if(trail.length > 200) { trail.shift(); onis.forEach(o => o.targetIdx = Math.max(0, o.targetIdx - 1)); }
+            if(Math.hypot(p.x-trail[trail.length-1].x, p.y-trail[trail.length-1].y) > 10) {
+                trail.push({x:p.x, y:p.y}); if(trail.length > 300) { trail.shift(); onis.forEach(o=>o.targetIdx=Math.max(0,o.targetIdx-1)); }
             }
         }
     }
 
+    let now = Date.now();
+    if (p.ammo < 3 && now - lastReloadTime > 10000) { p.ammo++; lastReloadTime = now; }
+    document.getElementById('ammo-inner').style.width = ((p.ammo / 3) * 100) + "%";
+
     if (input['ShiftLeft'] && p.ammo > 0 && !p.isHidden) {
         bullets.push({x: p.x, y: p.y-10, vx: p.dir==='left'?-5:p.dir==='right'?5:0, vy: p.dir==='up'?-5:p.dir==='down'?5:0, life: 50});
-        p.ammo--; input['ShiftLeft'] = false;
+        p.ammo--; input['ShiftLeft'] = false; if (p.ammo === 2) lastReloadTime = now;
     }
-    if (p.ammo < 3 && Date.now() - lastReloadTime > 10000) { p.ammo++; lastReloadTime = Date.now(); }
-    document.getElementById('ammo-inner').style.width = (p.ammo/3)*100 + "%";
 
     onis.forEach(oni => {
-        // プレイヤーが隠れているときは足跡の最後まで追う
-        let target = trail[oni.targetIdx] || p;
-        let dx = target.x - oni.x, dy = target.y - oni.y;
-        let dist = Math.hypot(dx, dy);
-
-        if (dist > 2) {
-            oni.x += (dx/dist) * oni.speed;
-            oni.y += (dy/dist) * oni.speed;
-            oni.dir = Math.abs(dx) > Math.abs(dy) ? (dx>0?'right':'left') : (dy>0?'down':'up');
-        } else if (oni.targetIdx < trail.length - 1) {
-            oni.targetIdx++;
+        let dP = Math.hypot(oni.x - p.x, oni.y - p.y);
+        if (!p.isHidden && dP < (oni.isBoss ? 200 : 120)) { oni.isChasing = true; oni.targetIdx = oni.targetIdx < 0 ? trail.length-1 : oni.targetIdx; }
+        if (oni.isChasing) {
+            let t = trail[oni.targetIdx] || p;
+            let dx = t.x-oni.x, dy = t.y-oni.y, d = Math.hypot(dx,dy);
+            if(d > 2) { oni.x += (dx/d)*oni.speed; oni.y += (dy/d)*oni.speed; oni.dir = Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up'); }
+            else if(oni.targetIdx < trail.length-1) oni.targetIdx++;
+            else if(p.isHidden && !oni.isBoss) oni.isChasing = false;
         }
-        
-        // 捕獲判定（隠れていない時のみ）
-        if(!p.isHidden && Math.hypot(oni.x-p.x, oni.y-p.y) < 12) init();
+        if(!p.isHidden && dP < (oni.isBoss ? 20 : 12)) init();
     });
 
     bullets.forEach((b, i) => {
         b.x += b.vx; b.y += b.vy; b.life--;
-        onis.forEach(o => { if(Math.hypot(b.x-o.x, b.y-o.y+12) < 15) { o.x += b.vx*12; o.y += b.vy*12; b.life=0; }});
+        onis.forEach(o => { if(Math.hypot(b.x-o.x, b.y-o.y+12) < (o.isBoss?30:15)) { o.x += b.vx*(o.isBoss?2:10); o.y += b.vy*(o.isBoss?2:10); b.life=0; if(!o.isBoss) o.isChasing=false; }});
         if(b.life <= 0) bullets.splice(i, 1);
     });
 
-    keysItems.forEach(k => { if(!k.collected && !p.isHidden && Math.hypot(p.x-k.x, p.y-k.y) < 15) { k.collected = true; p.keys++; spawnOni(); }});
+    keysItems.forEach(k => { if(!k.collected && !p.isHidden && Math.hypot(p.x-k.x, p.y-k.y) < 15) { 
+        k.collected = true; p.keys++; if(p.keys < 5) spawnOni(); else { isBossFight = true; document.getElementById('boss-warning').style.display = 'block'; spawnOni(true); }
+    }});
+    document.getElementById('key-status').innerText = `KEYS: ${p.keys} / 5`;
+    document.getElementById('ghost-count').innerText = `GHOSTS: ${onis.length}`;
 }
 
 function draw() {
     update();
+    if(isBossFight && Math.random() > 0.9) ctx.translate(Math.random()*2-1, Math.random()*2-1);
     ctx.fillStyle = '#000'; ctx.fillRect(0,0,GW,GH);
     ctx.save(); ctx.translate(GW/2-p.x, GH/2-p.y);
 
-    let sx = Math.floor((p.x-GW/2)/TILE)-1, ex = Math.ceil((p.x+GW/2)/TILE)+1;
-    let sy = Math.floor((p.y-GH/2)/TILE)-1, ey = Math.ceil((p.y+GH/2)/TILE)+1;
-    for(let y=sy; y<=ey; y++) {
-        for(let x=sx; x<=ex; x++) {
+    for(let y=Math.floor((p.y-GH)/TILE); y<Math.ceil((p.y+GH)/TILE); y++) {
+        for(let x=Math.floor((p.x-GW)/TILE); x<Math.ceil((p.x+GW)/TILE); x++) {
             if(world[y]?.[x] === 1) {
-                ctx.fillStyle = '#f8f8f8'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
-                ctx.strokeStyle = '#eee'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
-            } else if(world[y]?.[x] === 0) {
-                ctx.fillStyle = '#111'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+                ctx.fillStyle = '#eee'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+                ctx.strokeStyle = '#ddd'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
             }
         }
     }
-
+    rugs.forEach(r => { ctx.fillStyle = '#822'; ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle='#511'; ctx.strokeRect(r.x, r.y, r.w, r.h); });
     furniture.forEach(drawFurniture);
     keysItems.forEach(k => { if(!k.collected) drawKey(k.x, k.y); });
     bullets.forEach(b => { ctx.fillStyle='#fff'; ctx.fillRect(b.x-1, b.y-1, 2, 2); });
-    
-    // 隠れている時は半透明
     drawEntity(p.x, p.y, p.dir, 'human', null, p.isHidden ? 0.3 : 1);
-    onis.forEach(oni => drawEntity(oni.x, oni.y, oni.dir, 'oni', oni.color));
-
+    onis.forEach(oni => drawEntity(oni.x, oni.y, oni.dir, 'oni', oni.color, 1, oni.scale));
     ctx.restore();
     
-    const grad = ctx.createRadialGradient(GW/2, GH/2, 20, GW/2, GH/2, 120);
-    grad.addColorStop(0, 'rgba(255,250,220,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.95)');
+    const grad = ctx.createRadialGradient(GW/2, GH/2, 10, GW/2, GH/2, 130);
+    grad.addColorStop(0, 'rgba(255,250,200,0)'); grad.addColorStop(1, isBossFight ? 'rgba(50,0,0,0.9)' : 'rgba(0,0,0,0.95)');
     ctx.fillStyle = grad; ctx.fillRect(0,0,GW,GH);
-
     requestAnimationFrame(draw);
 }
 
-window.input = {};
-window.onkeydown = e => window.input[e.code] = true;
-window.onkeyup = e => window.input[e.code] = false;
-init();
-draw();
+window.input = {}; window.onkeydown = e => window.input[e.code] = true; window.onkeyup = e => window.input[e.code] = false;
+init(); draw();
 </script>
 </body>
 </html>

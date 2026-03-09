@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>The Gilded Labyrinth: Eternal Manor</title>
+    <title>The Gilded Labyrinth: Fixed Edition</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { image-rendering: pixelated; border: 4px solid #444; width: 960px; height: 720px; }
-        #ui { position: absolute; top: 30px; color: #fff; font-family: 'Georgia', serif; pointer-events: none; width: 100%; text-align: center; }
+        canvas { image-rendering: pixelated; border: 4px solid #444; width: 960px; height: 720px; background: #111; }
+        #ui { position: absolute; top: 30px; color: #fff; font-family: 'Georgia', serif; pointer-events: none; width: 100%; text-align: center; z-index: 10; }
         .info { font-size: 18px; text-shadow: 2px 2px #000; letter-spacing: 2px; }
         #ammo-bar { width: 120px; height: 6px; background: #222; margin: 8px auto; border: 1px solid #666; }
         #ammo-inner { width: 100%; height: 100%; background: #c00; transition: width 0.1s; }
@@ -32,87 +32,76 @@ const GW = 320; const GH = 240;
 canvas.width = GW; canvas.height = GH;
 
 const TILE = 24;
-const MAP_W = 80; const MAP_H = 80; // さらに広大に
+const MAP_W = 80; const MAP_H = 80;
 
 let world = [], rooms = [], furniture = [], rugs = [];
 let p, onis = [], bullets = [], keysItems = [], trail = [];
 let lastReloadTime = Date.now();
 let isBossFight = false;
 
+// 描画補助
 function drawKey(x, y) {
     ctx.fillStyle = '#ffd700'; ctx.fillRect(x-1, y-4, 2, 6);
-    ctx.fillRect(x-3, y-6, 6, 3); ctx.fillRect(x, y, 3, 1); ctx.fillRect(x, y+2, 3, 1);
+    ctx.fillRect(x-3, y-6, 6, 3);
 }
 
 function drawFurniture(f) {
     ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(f.x-TILE/2, f.y+2, TILE, TILE/2);
     ctx.fillStyle = f.color;
     if(f.type === 'sofa') {
-        ctx.fillRect(f.x-10, f.y-6, 20, 12); ctx.fillStyle = '#422'; ctx.fillRect(f.x-10, f.y-10, 20, 4);
+        ctx.fillRect(f.x-10, f.y-6, 20, 12);
     } else {
-        ctx.fillRect(f.x-8, f.y-12, 16, 14); ctx.fillStyle = '#000'; ctx.fillRect(f.x-6, f.y-6, 12, 1);
+        ctx.fillRect(f.x-8, f.y-12, 16, 14);
     }
 }
 
 function drawEntity(x, y, dir, type, color, alpha = 1, scale = 1) {
     ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.scale(scale, scale);
-    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(0, 2, 7, 3, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = color || '#334';
     if (type === 'oni') {
-        ctx.fillStyle = color; ctx.fillRect(-6, -24, 12, 24); ctx.fillStyle = '#f00';
-        let ox = (dir === 'right' ? 2 : dir === 'left' ? -2 : 0);
-        ctx.fillRect(-3+ox, -18, 2, 2); ctx.fillRect(1+ox, -18, 2, 2);
+        ctx.fillRect(-6, -24, 12, 24);
+        ctx.fillStyle = '#f00'; ctx.fillRect(-3, -18, 2, 2); ctx.fillRect(1, -18, 2, 2);
     } else {
         ctx.fillStyle = '#334'; ctx.fillRect(-5, -16, 10, 14);
         ctx.fillStyle = '#ffdbac'; ctx.fillRect(-3, -21, 6, 6);
-        ctx.fillStyle = '#111'; ctx.fillRect(-4, -22, 8, 3);
     }
     ctx.restore();
 }
 
-// 迷路風マップ生成
 function generateMansion() {
     world = Array.from({length: MAP_H}, () => new Array(MAP_W).fill(0));
     rooms = []; furniture = []; rugs = [];
     
-    // 部屋をグリッド状に配置
+    // 部屋生成
     for(let i=0; i<8; i++) {
         for(let j=0; j<8; j++) {
-            if(Math.random() > 0.4) {
-                let rw = 5 + Math.floor(Math.random()*6);
-                let rh = 5 + Math.floor(Math.random()*6);
-                let rx = i * 10 + 2;
-                let ry = j * 10 + 2;
+            if(Math.random() > 0.3 || (i==0 && j==0)) { // (0,0)は確実に作る
+                let rw = 6, rh = 6;
+                let rx = i * 10 + 2, ry = j * 10 + 2;
                 rooms.push({x:rx, y:ry, w:rw, h:rh});
                 for(let y=ry; y<ry+rh; y++) for(let x=rx; x<rx+rw; x++) world[y][x] = 1;
-                
-                // 絨毯
-                if(rw > 4 && rh > 4) rugs.push({x:(rx+1)*TILE, y:(ry+1)*TILE, w:(rw-2)*TILE, h:(rh-2)*TILE});
-                
-                // 壁際に家具
-                for(let k=1; k<rw-1; k+=3) furniture.push({x:(rx+k)*TILE+12, y:ry*TILE+10, type:'chest', color:'#432'});
-                if(rw > 6) furniture.push({x:(rx+rw/2)*TILE, y:(ry+rh/2)*TILE, type:'sofa', color:'#622'});
+                rugs.push({x:(rx+1)*TILE, y:(ry+1)*TILE, w:(rw-2)*TILE, h:(rh-2)*TILE});
+                // 壁際家具
+                furniture.push({x:(rx+1)*TILE+12, y:ry*TILE+10, type:'chest', color:'#432'});
             }
         }
     }
     
-    // 部屋同士を細い廊下で繋ぐ
+    // 廊下接続 (一本道にならないよう少し厚めに)
     for(let i=0; i<rooms.length-1; i++) {
-        let x1 = Math.floor(rooms[i].x + rooms[i].w/2);
-        let y1 = Math.floor(rooms[i].y + rooms[i].h/2);
-        let x2 = Math.floor(rooms[i+1].x + rooms[i+1].w/2);
-        let y2 = Math.floor(rooms[i+1].y + rooms[i+1].h/2);
-        
-        let cx = x1; let cy = y1;
-        while(cx !== x2) { world[cy][cx]=1; cx += (cx < x2 ? 1 : -1); }
-        while(cy !== y2) { world[cy][cx]=1; cy += (cy < y2 ? 1 : -1); }
+        let x1 = Math.floor(rooms[i].x + 2), y1 = Math.floor(rooms[i].y + 2);
+        let x2 = Math.floor(rooms[i+1].x + 2), y2 = Math.floor(rooms[i+1].y + 2);
+        let cx = x1, cy = y1;
+        while(cx !== x2) { world[cy][cx]=1; world[cy+1][cx]=1; cx += (cx < x2 ? 1 : -1); }
+        while(cy !== y2) { world[cy][cx]=1; world[cy][cx+1]=1; cy += (cy < y2 ? 1 : -1); }
     }
 }
 
 function spawnOni(isBoss = false) {
-    let r = rooms[Math.floor(Math.random()*rooms.length)];
+    let r = rooms[Math.floor(Math.random()*(rooms.length-1))+1];
     onis.push({ 
-        x: r.x*TILE+20, y: r.y*TILE+20, speed: isBoss ? 1.8 : 1.35, 
-        dir: 'down', color: isBoss ? '#300' : '#100', 
+        x: r.x*TILE+TILE, y: r.y*TILE+TILE, speed: isBoss ? 1.8 : 1.3, 
+        dir: 'down', color: isBoss ? '#400' : '#111', 
         isChasing: isBoss, targetIdx: trail.length - 1, isBoss, scale: isBoss ? 2.5 : 1
     });
 }
@@ -121,121 +110,92 @@ function init() {
     isBossFight = false;
     document.getElementById('boss-warning').style.display = 'none';
     generateMansion();
-    p = { x: rooms[0].x*TILE+TILE, y: rooms[0].y*TILE+TILE, speed: 1.1, keys: 0, dir: 'down', ammo: 3, isHidden: false };
+    // 最初の部屋の真ん中に配置
+    p = { x: rooms[0].x*TILE+TILE*3, y: rooms[0].y*TILE+TILE*3, speed: 1.1, keys: 0, dir: 'down', ammo: 3, isHidden: false };
     onis = []; spawnOni();
     keysItems = [];
     for(let i=0; i<5; i++) {
         let r = rooms[Math.floor(Math.random()*(rooms.length-1))+1];
-        keysItems.push({ x: (r.x + r.w/2)*TILE, y: (r.y + r.h/2)*TILE, collected: false });
+        keysItems.push({ x: (r.x + 3)*TILE, y: (r.y + 3)*TILE, collected: false });
     }
     bullets = []; trail = [{x: p.x, y: p.y}];
 }
 
 function update() {
     const input = window.input || {};
-    let stealthUI = document.getElementById('stealth-msg');
     let nearFurniture = furniture.find(f => Math.hypot(p.x - f.x, p.y - f.y) < 15);
-    
     if (nearFurniture && !p.isHidden) {
-        stealthUI.innerText = "Z:HIDE";
+        document.getElementById('stealth-msg').innerText = "Z:HIDE";
         if (input['KeyZ']) { p.isHidden = true; p.x = nearFurniture.x; p.y = nearFurniture.y; }
     } else if (p.isHidden) {
-        stealthUI.innerText = "HIDDEN - X:EXIT";
+        document.getElementById('stealth-msg').innerText = "X:EXIT";
         if (input['KeyX']) p.isHidden = false;
-    } else { stealthUI.innerText = ""; }
+    } else { document.getElementById('stealth-msg').innerText = ""; }
 
     if (!p.isHidden) {
         let nx = p.x, ny = p.y;
-        if (input['ArrowUp']) ny -= p.speed, p.dir = 'up';
-        if (input['ArrowDown']) ny += p.speed, p.dir = 'down';
-        if (input['ArrowLeft']) nx -= p.speed, p.dir = 'left';
-        if (input['ArrowRight']) nx += p.speed, p.dir = 'right';
-        
+        if (input['ArrowUp']) ny -= p.speed;
+        if (input['ArrowDown']) ny += p.speed;
+        if (input['ArrowLeft']) nx -= p.speed;
+        if (input['ArrowRight']) nx += p.speed;
         if (world[Math.floor(ny/TILE)]?.[Math.floor(nx/TILE)] === 1) {
             p.x = nx; p.y = ny;
             if(Math.hypot(p.x-trail[trail.length-1].x, p.y-trail[trail.length-1].y) > 10) {
-                trail.push({x:p.x, y:p.y}); 
-                if(trail.length > 400) { trail.shift(); onis.forEach(o=>o.targetIdx=Math.max(0,o.targetIdx-1)); }
+                trail.push({x:p.x, y:p.y}); if(trail.length > 300) trail.shift();
             }
         }
     }
 
     let now = Date.now();
     if (p.ammo < 3 && now - lastReloadTime > 10000) { p.ammo++; lastReloadTime = now; }
-    document.getElementById('ammo-inner').style.width = ((p.ammo / 3) * 100) + "%";
-
-    if (input['ShiftLeft'] && p.ammo > 0 && !p.isHidden) {
-        bullets.push({x: p.x, y: p.y-10, vx: p.dir==='left'?-5:p.dir==='right'?5:0, vy: p.dir==='up'?-5:p.dir==='down'?5:0, life: 50});
-        p.ammo--; input['ShiftLeft'] = false; if (p.ammo === 2) lastReloadTime = now;
-    }
+    document.getElementById('ammo-inner').style.width = (p.ammo/3)*100 + "%";
 
     onis.forEach(oni => {
         let dP = Math.hypot(oni.x - p.x, oni.y - p.y);
-        if (!p.isHidden && dP < (oni.isBoss ? 200 : 120)) { 
-            oni.isChasing = true; 
-            if(oni.targetIdx < 0) oni.targetIdx = trail.length - 1;
-        }
+        if (!p.isHidden && dP < (oni.isBoss ? 200 : 100)) oni.isChasing = true;
         if (oni.isChasing) {
             let t = trail[oni.targetIdx] || p;
             let dx = t.x-oni.x, dy = t.y-oni.y, d = Math.hypot(dx,dy);
-            if(d > 2) { 
-                oni.x += (dx/d)*oni.speed; oni.y += (dy/d)*oni.speed; 
-                oni.dir = Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up'); 
-            }
+            if(d > 2) { oni.x += (dx/d)*oni.speed; oni.y += (dy/d)*oni.speed; }
             else if(oni.targetIdx < trail.length-1) oni.targetIdx++;
-            else if(p.isHidden && !oni.isBoss) oni.isChasing = false;
         }
         if(!p.isHidden && dP < (oni.isBoss ? 20 : 12)) init();
     });
 
-    bullets.forEach((b, i) => {
-        b.x += b.vx; b.y += b.vy; b.life--;
-        onis.forEach(o => { if(Math.hypot(b.x-o.x, b.y-o.y+12) < (o.isBoss?30:15)) { o.x += b.vx*(o.isBoss?2:10); o.y += b.vy*(o.isBoss?2:10); b.life=0; if(!o.isBoss) o.isChasing=false; }});
-        if(b.life <= 0) bullets.splice(i, 1);
-    });
-
     keysItems.forEach(k => { if(!k.collected && !p.isHidden && Math.hypot(p.x-k.x, p.y-k.y) < 15) { 
-        k.collected = true; p.keys++; 
-        if(p.keys < 5) spawnOni(); 
-        else { isBossFight = true; document.getElementById('boss-warning').style.display = 'block'; spawnOni(true); }
+        k.collected = true; p.keys++; if(p.keys < 5) spawnOni(); else { isBossFight = true; document.getElementById('boss-warning').style.display = 'block'; spawnOni(true); }
     }});
     
     document.getElementById('key-status').innerText = `KEYS: ${p.keys} / 5`;
-    document.getElementById('ghost-count').innerText = `GHOSTS: ${onis.length}`;
-    
-    // クリア判定
-    if(p.keys >= 5 && Math.hypot(p.x - rooms[0].x*TILE, p.y - rooms[0].y*TILE) < 20) {
-        alert("YOU ESCAPED!"); init();
-    }
+    if(p.keys >= 5 && Math.hypot(p.x - rooms[0].x*TILE, p.y - rooms[0].y*TILE) < 30) { alert("CLEAR!"); init(); }
 }
 
 function draw() {
     update();
-    if(isBossFight && Math.random() > 0.9) ctx.translate(Math.random()*2-1, Math.random()*2-1);
     ctx.fillStyle = '#000'; ctx.fillRect(0,0,GW,GH);
     ctx.save(); ctx.translate(GW/2-p.x, GH/2-p.y);
 
-    for(let y=Math.floor((p.y-GH)/TILE); y<Math.ceil((p.y+GH)/TILE); y++) {
-        for(let x=Math.floor((p.x-GW)/TILE); x<Math.ceil((p.x+GW)/TILE); x++) {
+    // 床描画
+    for(let y=Math.floor((p.y-150)/TILE); y<Math.ceil((p.y+150)/TILE); y++) {
+        for(let x=Math.floor((p.x-200)/TILE); x<Math.ceil((p.x+200)/TILE); x++) {
             if(world[y]?.[x] === 1) {
-                ctx.fillStyle = '#eee'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
-                ctx.strokeStyle = '#ddd'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
+                ctx.fillStyle = '#ddd'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+                ctx.strokeStyle = '#bbb'; ctx.strokeRect(x*TILE, y*TILE, TILE, TILE);
             }
         }
     }
-    rugs.forEach(r => { ctx.fillStyle = '#822'; ctx.fillRect(r.x, r.y, r.w, r.h); });
+    rugs.forEach(r => { ctx.fillStyle = '#722'; ctx.fillRect(r.x, r.y, r.w, r.h); });
     furniture.forEach(drawFurniture);
     keysItems.forEach(k => { if(!k.collected) drawKey(k.x, k.y); });
-    if(p.keys >= 5) { // ゴール地点
-        ctx.fillStyle = '#fff'; ctx.font = '10px serif'; ctx.fillText("EXIT", rooms[0].x*TILE, rooms[0].y*TILE);
+    if(p.keys >= 5) {
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.fillText("EXIT HERE", rooms[0].x*TILE, rooms[0].y*TILE);
     }
-    bullets.forEach(b => { ctx.fillStyle='#fff'; ctx.fillRect(b.x-1, b.y-1, 2, 2); });
-    drawEntity(p.x, p.y, p.dir, 'human', null, p.isHidden ? 0.3 : 1);
+    drawEntity(p.x, p.y, p.dir, 'human', '#334', p.isHidden ? 0.3 : 1);
     onis.forEach(oni => drawEntity(oni.x, oni.y, oni.dir, 'oni', oni.color, 1, oni.scale));
     ctx.restore();
     
-    const grad = ctx.createRadialGradient(GW/2, GH/2, 10, GW/2, GH/2, 130);
-    grad.addColorStop(0, 'rgba(255,250,200,0)'); grad.addColorStop(1, isBossFight ? 'rgba(50,0,0,0.9)' : 'rgba(0,0,0,0.95)');
+    const grad = ctx.createRadialGradient(GW/2, GH/2, 20, GW/2, GH/2, 120);
+    grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(0,0,0,0.9)');
     ctx.fillStyle = grad; ctx.fillRect(0,0,GW,GH);
     requestAnimationFrame(draw);
 }

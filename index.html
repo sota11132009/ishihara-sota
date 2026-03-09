@@ -2,19 +2,23 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Exorcist: Mansion Escape</title>
+    <title>The White Marble Mansion: Multiplied Dread</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { image-rendering: pixelated; border: 4px solid #1a1a1a; width: 960px; height: 720px; }
-        #ui { position: absolute; top: 20px; color: #fff; font-family: 'serif'; pointer-events: none; text-align: center; width: 100%; }
-        .info { font-size: 18px; text-shadow: 2px 2px #000; margin-bottom: 5px; }
-        #ammo-ui { color: #f00; font-weight: bold; }
+        canvas { image-rendering: pixelated; border: 4px solid #333; width: 960px; height: 720px; box-shadow: 0 0 100px rgba(0,0,0,1); }
+        #ui { position: absolute; top: 30px; color: #fff; font-family: 'Times New Roman', serif; pointer-events: none; width: 100%; text-align: center; }
+        .info { font-size: 20px; text-shadow: 2px 2px #000; letter-spacing: 3px; margin-bottom: 10px; }
+        #ammo-bar { width: 100px; height: 4px; background: #333; margin: 5px auto; position: relative; }
+        #ammo-inner { width: 100%; height: 100%; background: #f00; transition: width 0.3s; }
+        #ghost-count { font-size: 14px; color: #f00; margin-top: 5px; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <div class="info" id="key-status">KEYS: 0 / 5</div>
-        <div class="info" id="ammo-ui">AMMO: 3 / 3 (READY)</div>
+        <div class="info" id="key-status">KEYS FOUND: 0 / 5</div>
+        <div id="ammo-bar"><div id="ammo-inner"></div></div>
+        <div class="info" id="ammo-text" style="font-size: 12px;">BULLETS: 3 / 3</div>
+        <div id="ghost-count">GHOSTS: 1</div>
     </div>
     <canvas id="game"></canvas>
 
@@ -25,88 +29,60 @@ const GW = 320; const GH = 240;
 canvas.width = GW; canvas.height = GH;
 
 const TILE = 24;
-const MAP_W = 60; const MAP_H = 60;
+const MAP_W = 50; const MAP_H = 50;
 
 let world = [], rooms = [];
 let p, onis = [], bullets = [], keysItems = [], trail = [];
 let lastReloadTime = Date.now();
 
-// --- 1. キャラクター描画関数 (本格ドット) ---
-function drawHuman(x, y, dir, isGhost = false, color = '#2c3e50') {
+function drawEntity(x, y, dir, type, color = '#1a0000') {
     ctx.save();
     ctx.translate(x, y);
-    
-    // 影
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(-6, 2, 12, 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(0, 2, 8, 4, 0, 0, Math.PI*2); ctx.fill();
 
-    if (isGhost) {
-        // 鬼（幽霊）の描画
+    if (type === 'oni') {
         ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(-7, 4); ctx.lineTo(-7, -14);
-        ctx.quadraticCurveTo(0, -22, 7, -14); ctx.lineTo(7, 4);
-        ctx.fill();
-        // 裾のギザギザ
-        for(let i=0; i<3; i++) {
-            ctx.beginPath();
-            ctx.arc(-4 + i*4, 4, 3, 0, Math.PI);
-            ctx.fill();
-        }
-        // 顔（向きに合わせて目が動く）
-        ctx.fillStyle = '#fff';
-        let ox = (dir === 'right' ? 2 : dir === 'left' ? -2 : 0);
-        let oy = (dir === 'down' ? 2 : dir === 'up' ? -2 : 0);
-        ctx.fillRect(-4+ox, -14+oy, 2, 2); ctx.fillRect(2+ox, -14+oy, 2, 2);
+        ctx.fillRect(-6, -24, 12, 24); 
+        ctx.fillStyle = '#400'; ctx.fillRect(-6, -10, 12, 2);
+        ctx.fillStyle = '#f00';
+        let ox = (dir === 'right' ? 3 : dir === 'left' ? -3 : 0);
+        ctx.fillRect(-3+ox, -20, 2, 2); ctx.fillRect(1+ox, -20, 2, 2);
     } else {
-        // 人間の描画
-        // 体
-        ctx.fillStyle = color;
-        ctx.fillRect(-5, -14, 10, 14);
-        // 頭
-        ctx.fillStyle = '#ffdbac';
-        ctx.fillRect(-3, -18, 6, 6);
-        // 髪/帽子
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(-4, -19, 8, 3);
-        // 向いている方向へのディテール
-        ctx.fillStyle = '#000';
-        if(dir === 'right') ctx.fillRect(2, -15, 2, 2);
-        if(dir === 'left')  ctx.fillRect(-4, -15, 2, 2);
-        if(dir === 'down')  { ctx.fillRect(-2, -15, 1, 2); ctx.fillRect(1, -15, 1, 2); }
+        ctx.fillStyle = '#333'; ctx.fillRect(-5, -16, 10, 14);
+        ctx.fillStyle = '#111'; ctx.fillRect(-4, -4, 3, 4); ctx.fillRect(1, -4, 3, 4);
+        ctx.fillStyle = '#ffdbac'; ctx.fillRect(-3, -21, 6, 6);
+        ctx.fillStyle = '#221100'; ctx.fillRect(-4, -22, 8, 3);
     }
     ctx.restore();
 }
 
-// --- 2. 銃弾クラス ---
 class Bullet {
     constructor(x, y, dir) {
         this.x = x; this.y = y;
-        this.vx = (dir === 'left' ? -4 : dir === 'right' ? 4 : 0);
-        this.vy = (dir === 'up' ? -4 : dir === 'down' ? 4 : 0);
-        this.life = 40;
+        this.vx = (dir === 'left' ? -5 : dir === 'right' ? 5 : 0);
+        this.vy = (dir === 'up' ? -5 : dir === 'down' ? 5 : 0);
+        this.life = 50;
     }
     update() {
         this.x += this.vx; this.y += this.vy;
         this.life--;
-        // 鬼との衝突判定
         onis.forEach(o => {
-            if (Math.hypot(this.x - o.x, this.y - o.y) < 15) {
-                o.x += this.vx * 5; o.y += this.vy * 5; // 強力ノックバック
+            let d = Math.hypot(this.x - o.x, this.y - (o.y-12));
+            if (d < 15) {
+                o.x += this.vx * 10; o.y += this.vy * 10;
                 this.life = 0;
             }
         });
     }
     draw() {
-        ctx.fillStyle = '#ff0';
-        ctx.fillRect(this.x-1, this.y-1, 3, 3);
+        ctx.fillStyle = '#fff'; ctx.fillRect(this.x-1, this.y-1, 2, 2);
     }
 }
 
-// --- 3. マップ生成 & 初期化 ---
 function generateMansion() {
     for(let y=0; y<MAP_H; y++) world[y] = new Array(MAP_W).fill(0);
-    rooms = [{x:5,y:5,w:8,h:8},{x:45,y:10,w:10,h:7},{x:10,y:40,w:7,h:12},{x:40,y:45,w:12,h:10},{x:25,y:25,w:6,h:6}];
+    rooms = [{x:5,y:5,w:10,h:10},{x:35,y:10,w:10,h:10},{x:10,y:35,w:10,h:10},{x:35,y:35,w:10,h:10},{x:22,y:22,w:6,h:6}];
     rooms.forEach(r => {
         for(let py=r.y; py<r.y+r.h; py++) for(let px=r.x; px<r.x+r.w; px++) world[py][px] = 1;
     });
@@ -117,100 +93,106 @@ function generateMansion() {
     }
 }
 
-function init() {
-    generateMansion();
-    p = { x: rooms[0].x*TILE+30, y: rooms[0].y*TILE+30, speed: 1.0, keys: 0, dir: 'down', ammo: 3 };
-    onis = [
-        { x: rooms[1].x*TILE+20, y: rooms[1].y*TILE+20, speed: 0.7, dir: 'down', color: '#600' },
-        { x: rooms[2].x*TILE+20, y: rooms[2].y*TILE+20, speed: 0.7, dir: 'down', color: '#404' }
-    ];
-    keysItems = rooms.slice(1).map(r => ({ x: (r.x+2)*TILE, y: (r.y+2)*TILE, collected: false }));
-    bullets = [];
+function spawnOni() {
+    // プレイヤーから一番遠い広間に鬼を生成
+    let targetRoom = rooms[Math.floor(Math.random()*rooms.length)];
+    onis.push({ 
+        x: targetRoom.x * TILE + 20, 
+        y: targetRoom.y * TILE + 20, 
+        speed: 1.1 * 1.2, 
+        dir: 'down',
+        color: `rgb(${Math.random()*50+20}, 0, 0)`
+    });
 }
 
-// --- 4. メインループ ---
+function init() {
+    generateMansion();
+    p = { x: rooms[0].x*TILE+30, y: rooms[0].y*TILE+30, speed: 1.1, keys: 0, dir: 'down', ammo: 3 };
+    onis = [];
+    spawnOni(); // 最初の一体
+    keysItems = rooms.slice(1).map(r => ({ x: (r.x+3)*TILE, y: (r.y+3)*TILE, collected: false }));
+    bullets = [];
+    trail = [];
+}
+
 function update() {
     const input = window.input || {};
-    let nx = p.x, ny = p.y;
-    let moved = false;
-
-    if (input['ArrowUp'])    { ny -= p.speed; p.dir = 'up'; moved = true; }
-    else if (input['ArrowDown'])  { ny += p.speed; p.dir = 'down'; moved = true; }
-    else if (input['ArrowLeft'])  { nx -= p.speed; p.dir = 'left'; moved = true; }
+    let nx = p.x, ny = p.y, moved = false;
+    if (input['ArrowUp']) { ny -= p.speed; p.dir = 'up'; moved = true; }
+    else if (input['ArrowDown']) { ny += p.speed; p.dir = 'down'; moved = true; }
+    else if (input['ArrowLeft']) { nx -= p.speed; p.dir = 'left'; moved = true; }
     else if (input['ArrowRight']) { nx += p.speed; p.dir = 'right'; moved = true; }
 
     if (world[Math.floor(ny/TILE)]?.[Math.floor(nx/TILE)] === 1) {
         p.x = nx; p.y = ny;
-        if(moved) { trail.push({x:p.x, y:p.y}); if(trail.length > 100) trail.shift(); }
+        if(moved) { trail.push({x:p.x, y:p.y}); if(trail.length > 150) trail.shift(); }
     }
 
-    // 銃を撃つ (Shift)
     if (input['ShiftLeft'] && p.ammo > 0) {
         bullets.push(new Bullet(p.x, p.y - 10, p.dir));
-        p.ammo--;
-        input['ShiftLeft'] = false; // 押しっぱなし防止
+        p.ammo--; input['ShiftLeft'] = false;
     }
+    if (p.ammo < 3 && Date.now() - lastReloadTime > 10000) { p.ammo++; lastReloadTime = Date.now(); }
 
-    // リロード処理 (10秒 = 10000ms)
-    if (p.ammo < 3 && Date.now() - lastReloadTime > 10000) {
-        p.ammo++;
-        lastReloadTime = Date.now();
-    }
-
-    // UI更新
-    document.getElementById('ammo-ui').innerText = `AMMO: ${p.ammo} / 3 ${p.ammo < 3 ? `(Reloading...)` : '(READY)'}`;
-    document.getElementById('key-status').innerText = `KEYS: ${p.keys} / 5`;
+    document.getElementById('ammo-inner').style.width = (p.ammo/3)*100 + "%";
+    document.getElementById('ammo-text').innerText = `BULLETS: ${p.ammo} / 3`;
+    document.getElementById('key-status').innerText = `KEYS FOUND: ${p.keys} / 5`;
+    document.getElementById('ghost-count').innerText = `GHOSTS: ${onis.length}`;
 
     bullets.forEach((b, i) => { b.update(); if(b.life <= 0) bullets.splice(i, 1); });
 
-    onis.forEach(o => {
-        let d = Math.hypot(o.x-p.x, o.y-p.y);
-        let target = trail[Math.max(0, trail.length - 40)] || p;
-        let ang = Math.atan2(target.y-o.y, target.x-o.x);
-        o.x += Math.cos(ang) * o.speed;
-        o.y += Math.sin(ang) * o.speed;
-        
-        // 鬼の向きを決定
-        if (Math.abs(Math.cos(ang)) > Math.abs(Math.sin(ang))) o.dir = Math.cos(ang) > 0 ? 'right' : 'left';
-        else o.dir = Math.sin(ang) > 0 ? 'down' : 'up';
-
-        if(d < 12) init(); 
+    onis.forEach(oni => {
+        let target = trail[0] || p;
+        let ang = Math.atan2(target.y-oni.y, target.x-oni.x);
+        oni.x += Math.cos(ang) * oni.speed;
+        oni.y += Math.sin(ang) * oni.speed;
+        oni.dir = Math.abs(Math.cos(ang)) > Math.abs(Math.sin(ang)) ? (Math.cos(ang) > 0 ? 'right' : 'left') : (Math.sin(ang) > 0 ? 'down' : 'up');
+        if(Math.hypot(oni.x-p.x, oni.y-p.y) < 12) init();
     });
 
     keysItems.forEach(k => {
-        if(!k.collected && Math.hypot(p.x-k.x, p.y-k.y) < 15) { k.collected = true; p.keys++; }
+        if(!k.collected && Math.hypot(p.x-k.x, p.y-k.y) < 15) {
+            k.collected = true; p.keys++;
+            spawnOni(); // 鍵を取るごとに一体追加
+        }
     });
 }
 
 function draw() {
     update();
     ctx.fillStyle = '#000'; ctx.fillRect(0,0,GW,GH);
-    ctx.save();
-    ctx.translate(GW/2-p.x, GH/2-p.y);
+    ctx.save(); ctx.translate(GW/2-p.x, GH/2-p.y);
 
-    // タイル描画
     for(let y=Math.floor((p.y-GH)/TILE); y<Math.ceil((p.y+GH)/TILE); y++) {
         for(let x=Math.floor((p.x-GW)/TILE); x<Math.ceil((p.x+GW)/TILE); x++) {
+            let tx = x*TILE, ty = y*TILE;
             if(world[y]?.[x] === 1) {
-                ctx.fillStyle = '#1a1818'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+                ctx.fillStyle = '#f0f0f0'; ctx.fillRect(tx, ty, TILE, TILE); // 白い大理石
+                ctx.fillStyle = '#e0e0e0'; ctx.fillRect(tx, ty, TILE, 1); // 目地
             } else if(world[y]?.[x] === 0) {
-                ctx.fillStyle = '#050505'; ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
-                if(world[y+1]?.[x] === 1) { ctx.fillStyle = '#111'; ctx.fillRect(x*TILE, y*TILE+TILE-4, TILE, 4); }
+                ctx.fillStyle = '#111'; ctx.fillRect(tx, ty, TILE, TILE);
+                if(world[y+1]?.[x] === 1) {
+                    ctx.fillStyle = '#222'; ctx.fillRect(tx, ty+TILE-6, TILE, 6);
+                    ctx.fillStyle = '#3a2a1a'; ctx.fillRect(tx, ty+TILE-2, TILE, 2); // 巾木
+                }
             }
         }
     }
 
-    keysItems.forEach(k => { if(!k.collected) { ctx.fillStyle = '#ffd700'; ctx.fillRect(k.x-2, k.y-4, 4, 8); }});
+    keysItems.forEach(k => { if(!k.collected) { 
+        ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(k.x, k.y, 4, 0, 7); ctx.fill(); 
+    }});
+
     bullets.forEach(b => b.draw());
-    
-    drawHuman(p.x, p.y, p.dir, false, '#2c3e50');
-    onis.forEach(o => drawHuman(o.x, o.y, o.dir, true, o.color));
+    drawEntity(p.x, p.y, p.dir, 'human');
+    onis.forEach(oni => drawEntity(oni.x, oni.y, oni.dir, 'oni', oni.color));
 
     ctx.restore();
 
-    // 懐中電灯
-    const grad = ctx.createRadialGradient(GW/2, GH/2, 10, GW/2, GH/2, 110);
-    grad.addColorStop(0, 'transparent'); grad.addColorStop(1, 'rgba(0,0,0,0.9)');
+    const grad = ctx.createRadialGradient(GW/2, GH/2, 20, GW/2, GH/2, 120);
+    grad.addColorStop(0, 'rgba(255,255,255,0.05)');
+    grad.addColorStop(0.5, 'rgba(0,0,0,0.5)');
+    grad.addColorStop(1, 'rgba(0,0,0,1)');
     ctx.fillStyle = grad; ctx.fillRect(0,0,GW,GH);
 
     requestAnimationFrame(draw);
@@ -219,7 +201,6 @@ function draw() {
 window.input = {};
 window.onkeydown = e => window.input[e.code] = true;
 window.onkeyup = e => window.input[e.code] = false;
-
 init();
 draw();
 </script>

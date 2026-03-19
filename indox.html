@@ -2,74 +2,97 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Wide Stage Smash</title>
+    <title>Pixel Smash - Ultimate Up</title>
     <style>
-        body { margin: 0; background: #1a1a2e; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
-        canvas { background: #16213e; border: 4px solid #48dbfb; image-rendering: pixelated; width: 900px; height: 600px; }
-        .ui { display: flex; gap: 50px; font-size: 30px; font-weight: bold; margin-top: 10px; }
+        body { margin: 0; background: #0a0a12; color: white; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+        canvas { background: #16213e; border: 4px solid #333; image-rendering: pixelated; width: 900px; height: 600px; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+        .ui { display: flex; gap: 80px; font-size: 32px; font-weight: bold; margin-top: 20px; text-shadow: 2px 2px #000; }
     </style>
 </head>
 <body>
 
 <canvas id="game"></canvas>
 <div class="ui">
-    <div style="color:#ff7675">P1: <span id="p-dmg">0</span>%</div>
-    <div style="color:#55efc4">CPU: <span id="cpu-dmg">0</span>%</div>
+    <div style="color:#ff4757">P1: <span id="p-dmg">0</span>%</div>
+    <div style="color:#2ed573">CPU: <span id="cpu-dmg">0</span>%</div>
 </div>
 
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-canvas.width = 400; // ステージを広くするため横幅を拡張
-canvas.height = 250;
+canvas.width = 300;
+canvas.height = 200;
 
-// 設定（スピードを少し遅く、ジャンプを制御しやすく）
+// 物理・調整
 const G = 0.35;
-const WALK = 2.2; // 3.5から2.2へ減速。制御しやすくしました。
-const JUMP = -6.5; 
+const WALK = 2.0;
+const JUMP = -6.5;
 
 const keys = {};
 window.onkeydown = e => keys[e.code] = true;
 window.onkeyup = e => keys[e.code] = false;
 
+// --- ドット絵データ (8x10) ---
+const PIXELS = {
+    idle: [
+        [0,1,1,1,0],
+        [1,1,1,1,1],
+        [1,0,1,0,1],
+        [1,1,1,1,1],
+        [0,1,1,1,0],
+        [0,1,1,1,0],
+        [1,1,1,1,1],
+        [0,1,0,1,0]
+    ],
+    walk: [
+        [0,1,1,1,0],
+        [1,1,1,1,1],
+        [1,0,1,0,1],
+        [1,1,1,1,1],
+        [0,1,1,1,0],
+        [0,1,1,1,0],
+        [1,1,1,1,1],
+        [1,0,0,0,1]
+    ]
+};
+
 class Char {
     constructor(x, y, color, isCPU) {
-        this.x = x; this.y = y; this.w = 16; this.h = 20;
+        this.x = x; this.y = y; this.w = 14; this.h = 18;
         this.dx = 0; this.dy = 0;
         this.color = color;
         this.hp = 0;
         this.jumps = 0;
         this.facing = 1;
         this.isCPU = isCPU;
-        this.state = "idle";
+        this.state = "idle"; 
         this.timer = 0;
+        this.anim = 0;
     }
 
     update(target) {
+        this.anim++;
         if (this.state === "hit") {
             this.timer--;
             if (this.timer <= 0) this.state = "idle";
         } else if (this.state === "attack") {
             this.timer--;
-            this.dx *= 0.8; 
+            this.dx *= 0.5;
             if (this.timer <= 0) this.state = "idle";
-        } else if (keys.ShiftLeft && !this.isCPU) {
-            this.state = "shield";
-            this.dx = 0;
         } else {
-            this.state = "idle";
             if (!this.isCPU) {
-                // 移動（少しゆっくりに）
+                // 移動
                 if (keys.ArrowRight) { this.dx = WALK; this.facing = 1; }
                 else if (keys.ArrowLeft) { this.dx = -WALK; this.facing = -1; }
                 else { this.dx = 0; }
-                
-                // ジャンプ
-                if (keys.Space && this.jumps < 2 && !this.jumpDebounce) {
-                    this.dy = JUMP; this.jumps++; this.jumpDebounce = true;
+
+                // 上キー or スペースでジャンプ
+                if ((keys.ArrowUp || keys.Space) && this.jumps < 2 && !this.jDebounce) {
+                    this.dy = JUMP; this.jumps++; this.jDebounce = true;
                 }
-                if (!keys.Space) this.jumpDebounce = false;
-                
+                if (!keys.ArrowUp && !keys.Space) this.jDebounce = false;
+
+                // 攻撃
                 if (keys.KeyA && this.state !== "attack") this.startAtk("normal");
                 if (keys.KeyS && this.state !== "attack") this.startAtk("special");
             } else {
@@ -81,56 +104,66 @@ class Char {
         this.x += this.dx;
         this.y += this.dy;
 
-        // ステージ（足場）を大きく設定
-        // x: 50 から 350 まで（幅300）の広い足場
-        const platX = 50, platW = 300, platY = 180;
-        if (this.dy > 0 && this.x + this.w > platX && this.x < platX + platW && this.y + this.h > platY && this.y + this.h < platY + 15) {
-            this.y = platY - this.h;
+        // 足場判定
+        if (this.dy > 0 && this.x + this.w > 40 && this.x < 260 && this.y + this.h > 160 && this.y + this.h < 175) {
+            this.y = 160 - this.h;
             this.dy = 0;
             this.jumps = 0;
         }
 
-        // バースト範囲もステージに合わせて拡大
-        if (this.x < -100 || this.x > 500 || this.y < -100 || this.y > 350) {
-            this.x = 200; this.y = 50; this.hp = 0; this.dx = 0; this.dy = 0;
-            updateUI();
-        }
+        if (this.x < -50 || this.x > 350 || this.y < -50 || this.y > 250) this.respawn();
     }
 
     startAtk(type) {
         this.state = "attack";
-        this.timer = 15;
-        if (type === "special" && keys.ArrowUp) this.dy = -8; 
+        this.timer = 12;
+        if (type === "special" && keys.ArrowUp) this.dy = -8.5; // 上B
     }
 
     ai(target) {
-        let dist = target.x - this.x;
-        if (Math.abs(dist) > 40) {
-            this.dx = dist > 0 ? WALK * 0.6 : -WALK * 0.6;
-            this.facing = dist > 0 ? 1 : -1;
+        let d = target.x - this.x;
+        if (Math.abs(d) > 35) {
+            this.dx = d > 0 ? 1.3 : -1.3;
+            this.facing = d > 0 ? 1 : -1;
         } else {
             this.dx = 0;
-            if (Math.random() < 0.03) this.startAtk("normal");
+            if (Math.random() < 0.04) this.startAtk("normal");
         }
-        if (this.y > 185) this.dy = JUMP; 
+        if (this.y > 165 && this.jumps < 2) { this.dy = JUMP; this.jumps++; } // 復帰ジャンプ
+    }
+
+    respawn() {
+        this.x = 150; this.y = 50; this.hp = 0; this.dx = 0; this.dy = 0;
+        updateUI();
     }
 
     draw() {
         ctx.save();
-        if (this.state === "shield") {
-            ctx.fillStyle = "rgba(100, 200, 255, 0.5)";
-            ctx.beginPath(); ctx.arc(this.x+this.w/2, this.y+this.h/2, 15, 0, Math.PI*2); ctx.fill();
-        }
-        ctx.fillStyle = this.state === "hit" ? "white" : (this.state === "attack" ? "yellow" : this.color);
-        ctx.fillRect(this.x, this.y, this.w, this.h);
-        ctx.fillStyle = "black";
-        ctx.fillRect(this.x + (this.facing === 1 ? 10 : 2), this.y + 4, 4, 4);
+        ctx.translate(this.x + (this.facing === -1 ? this.w : 0), this.y);
+        ctx.scale(this.facing, 1);
+
+        // 呼吸アニメーション (Idle時のみ)
+        let bounce = (this.state === "idle") ? Math.sin(this.anim * 0.2) * 0.5 : 0;
+        
+        const pixels = (this.dx !== 0 && this.dy === 0) ? PIXELS.walk : PIXELS.idle;
+        const pSize = 2;
+
+        pixels.forEach((row, y) => {
+            row.forEach((dot, x) => {
+                if (dot) {
+                    // 状態による色の変化
+                    ctx.fillStyle = (this.state === "hit") ? "white" : 
+                                   (this.state === "attack") ? "yellow" : this.color;
+                    ctx.fillRect(x * pSize, y * pSize + bounce, pSize, pSize);
+                }
+            });
+        });
         ctx.restore();
     }
 }
 
-const player = new Char(120, 50, "#ff7675", false);
-const cpu = new Char(280, 50, "#55efc4", true);
+const player = new Char(80, 50, "#ff4757", false);
+const cpu = new Char(220, 50, "#2ed573", true);
 
 function updateUI() {
     document.getElementById("p-dmg").innerText = player.hp;
@@ -138,28 +171,33 @@ function updateUI() {
 }
 
 function checkHit(a, b) {
-    if (a.state === "attack" && a.timer === 10 && b.state !== "shield") {
-        let ax = a.x + (a.facing === 1 ? a.w : -15);
-        if (ax + 15 > b.x && ax < b.x + b.w && a.y < b.y + b.h && a.y + 15 > b.y) {
-            b.hp += 8;
+    if (a.state === "attack" && a.timer === 8) {
+        let hitX = a.x + (a.facing === 1 ? a.w : -10);
+        if (hitX + 10 > b.x && hitX < b.x + b.w && a.y < b.y + b.h && a.y + 15 > b.y) {
+            b.hp += 10;
             b.state = "hit";
-            b.timer = 20;
+            b.timer = 15;
             b.dx = a.facing * (b.hp / 6 + 2);
-            b.dy = -b.hp / 12 - 2;
+            b.dy = -b.hp / 12 - 1.5;
             updateUI();
         }
     }
 }
 
 function loop() {
+    // 画面クリア（真っ黒防止）
     ctx.fillStyle = "#16213e";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 足場（大きく、少し厚みを持たせました）
+    // 背景の山
+    ctx.fillStyle = "#0f172a";
+    ctx.beginPath(); ctx.moveTo(0, 200); ctx.lineTo(100, 80); ctx.lineTo(200, 200); ctx.fill();
+
+    // 足場
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(40, 160, 220, 6);
     ctx.fillStyle = "#48dbfb";
-    ctx.fillRect(50, 180, 300, 8);
-    ctx.fillStyle = "rgba(0,0,0,0.3)"; // 足場の影
-    ctx.fillRect(50, 188, 300, 4);
+    ctx.fillRect(40, 160, 220, 2);
 
     player.update(cpu);
     cpu.update(player);

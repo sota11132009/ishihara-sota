@@ -2,139 +2,201 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Simple Smash Prototype</title>
+    <title>Kawaii Smash - Update</title>
     <style>
-        body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #222; color: white; font-family: sans-serif; }
-        canvas { background-color: #333; border: 4px solid #555; image-rendering: pixelated; }
-        #ui { position: absolute; bottom: 20px; font-size: 24px; font-weight: bold; text-align: center; width: 100%; pointer-events: none; }
+        body { margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(#a1c4fd, #c2e9fb); font-family: 'Arial', sans-serif; overflow: hidden; }
+        canvas { background: #e0f7fa; border: 8px solid #fff; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); image-rendering: pixelated; }
+        .ui { margin-top: 15px; display: flex; gap: 40px; font-size: 28px; font-weight: bold; text-shadow: 2px 2px #fff; }
+        .p-dmg { color: #ff6b6b; } .cpu-dmg { color: #48dbfb; }
     </style>
 </head>
 <body>
 
-<div id="ui">Player: <span id="damage">0</span>%</div>
 <canvas id="gameCanvas"></canvas>
+<div class="ui">
+    <div class="p-dmg">PLAYER: <span id="p-dmg">0</span>%</div>
+    <div class="cpu-dmg">CPU: <span id="cpu-dmg">0</span>%</div>
+</div>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-const damageDisplay = document.getElementById("damage");
-
 canvas.width = 600;
 canvas.height = 400;
 
-// 定数
-const GRAVITY = 0.5;
-const FRICTION = 0.8; // 地摩擦
+const GRAVITY = 0.4;
+const FRICTION = 0.88;
 
-// プレイヤーオブジェクト
-const player = {
-    x: 300, y: 100, width: 30, height: 30,
-    dx: 0, dy: 0,
-    speed: 0.8, jumpPower: -12,
-    damage: 0,
-    isJumping: false,
-    attackActive: false,
-    attackTimer: 0,
-    facing: 1 // 1: 右, -1: 左
-};
+class Character {
+    constructor(x, y, color, isCPU) {
+        this.x = x; this.y = y;
+        this.w = 32; this.h = 32;
+        this.color = color;
+        this.dx = 0; this.dy = 0;
+        this.damage = 0;
+        this.jumpCount = 0;
+        this.maxJumps = 2; // 2段ジャンプ
+        this.facing = 1;
+        this.attackActive = false;
+        this.attackTimer = 0;
+        this.isCPU = isCPU;
+        this.state = "idle"; // idle, attack, recovery
+    }
 
-// ステージ（浮いている足場）
-const platform = { x: 150, y: 250, width: 300, height: 20 };
+    update(target) {
+        if (this.isCPU) this.aiLogic(target);
+
+        this.dx *= FRICTION;
+        this.dy += GRAVITY;
+        this.x += this.dx;
+        this.y += this.dy;
+
+        // ステージ判定（雲の上の足場）
+        if (this.dy > 0 && this.x + this.w > 150 && this.x < 450 && this.y + this.h > 250 && this.y + this.h < 275) {
+            this.y = 250 - this.h;
+            this.dy = 0;
+            this.jumpCount = 0;
+            if(this.state === "recovery") this.state = "idle";
+        }
+
+        if (this.attackTimer > 0) this.attackTimer--;
+        else { this.attackActive = false; if(this.state !== "recovery") this.state = "idle"; }
+
+        if (this.x < -100 || this.x > 700 || this.y < -100 || this.y > 500) this.respawn();
+    }
+
+    aiLogic(target) {
+        const dist = target.x - this.x;
+        if (Math.abs(dist) > 50) this.dx += (dist > 0 ? 0.4 : -0.4);
+        if (Math.abs(dist) < 60 && Math.random() < 0.03) this.attack();
+        // 復帰AI
+        if (this.y > 280 && this.jumpCount < this.maxJumps) this.jump();
+        if (this.y > 320) this.specialAttack(); 
+    }
+
+    jump() {
+        if (this.jumpCount < this.maxJumps) {
+            this.dy = -10;
+            this.jumpCount++;
+        }
+    }
+
+    attack() {
+        if (!this.attackActive) {
+            this.attackActive = true;
+            this.attackTimer = 15;
+            this.state = "attack";
+        }
+    }
+
+    specialAttack() {
+        if (this.state !== "recovery") {
+            this.dy = -14; // 上Bの跳ね上がり
+            this.state = "recovery";
+            this.attackActive = true;
+            this.attackTimer = 20;
+        }
+    }
+
+    respawn() {
+        this.x = 300; this.y = 100; this.dx = 0; this.dy = 0; this.damage = 0;
+        this.jumpCount = 0; this.state = "idle"; updateUI();
+    }
+
+    draw() {
+        // キャラクターの影
+        ctx.fillStyle = "rgba(0,0,0,0.1)";
+        ctx.beginPath();
+        ctx.ellipse(this.x + this.w/2, 255, 15, 5, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        // 本体（ドット絵風）
+        ctx.fillStyle = this.color;
+        ctx.roundRect(this.x, this.y, this.w, this.h, 8); 
+        ctx.fill();
+
+        // 顔（向きに合わせて変更）
+        ctx.fillStyle = "#333";
+        const eyeX = this.facing === 1 ? this.x + 20 : this.x + 4;
+        ctx.fillRect(eyeX, this.y + 10, 6, 6); // 目
+        ctx.fillStyle = "#ffcccc";
+        ctx.fillRect(eyeX + (this.facing*2), this.y + 18, 4, 4); // ほっぺ
+
+        // 攻撃エフェクト
+        if (this.attackActive) {
+            ctx.fillStyle = this.state === "recovery" ? "#fff" : "rgba(255,255,255,0.8)";
+            const ax = this.facing === 1 ? this.x + this.w : this.x - 20;
+            ctx.beginPath();
+            ctx.arc(ax + 10, this.y + 15, 15, 0, Math.PI*2);
+            ctx.fill();
+        }
+    }
+}
+
+const player = new Character(200, 100, "#ff7675", false);
+const cpu = new Character(400, 100, "#74b9ff", true);
+
+window.addEventListener("keydown", e => {
+    if (e.code === "ArrowRight") { player.dx += 0.8; player.facing = 1; }
+    if (e.code === "ArrowLeft") { player.dx -= 0.8; player.facing = -1; }
+    if (e.code === "Space") player.jump();
+    if (e.code === "KeyZ") {
+        if (keys["ArrowUp"]) player.specialAttack(); // 上B
+        else player.attack();
+    }
+});
 
 const keys = {};
 window.addEventListener("keydown", e => keys[e.code] = true);
 window.addEventListener("keyup", e => keys[e.code] = false);
 
-// 攻撃ボタン（Zキー）
-window.addEventListener("keydown", e => {
-    if (e.code === "KeyZ" && !player.attackActive) {
-        player.attackActive = true;
-        player.attackTimer = 10; // 10フレーム攻撃判定
-        
-        // セルフダメージテスト用（本来は敵に当てるものですが、今回は動きの確認用）
-        // もし「敵」がいたらここで判定処理を行います
-    }
-});
-
-function update() {
-    // 左右移動（慣性あり）
-    if (keys.ArrowRight) { player.dx += player.speed; player.facing = 1; }
-    if (keys.ArrowLeft) { player.dx -= player.speed; player.facing = -1; }
-    
-    // 摩擦
-    player.dx *= FRICTION;
-    
-    // ジャンプ
-    if (keys.Space && !player.isJumping) {
-        player.dy = player.jumpPower;
-        player.isJumping = true;
-    }
-
-    // 重力
-    player.dy += GRAVITY;
-    player.x += player.dx;
-    player.y += player.dy;
-
-    // 足場との当たり判定
-    if (player.dy > 0 &&
-        player.x + player.width > platform.x &&
-        player.x < platform.x + platform.width &&
-        player.y + player.height > platform.y &&
-        player.y + player.height < platform.y + platform.height + 10) {
-        player.y = platform.y - player.height;
-        player.dy = 0;
-        player.isJumping = false;
-    } else {
-        player.isJumping = true;
-    }
-
-    // 攻撃タイマー
-    if (player.attackTimer > 0) {
-        player.attackTimer--;
-    } else {
-        player.attackActive = false;
-    }
-
-    // 場外判定（バースト）
-    if (player.x < -100 || player.x > canvas.width + 100 || player.y < -100 || player.y > canvas.height + 100) {
-        // リセット
-        player.x = 300; player.y = 100; player.dx = 0; player.dy = 0;
-        player.damage = 0;
-        damageDisplay.innerText = player.damage;
-    }
-
-    // 【デバッグ用】Xキーを押すと自分にダメージ（吹っ飛びの確認用）
-    if (keys.KeyX) {
-        player.damage += 1;
-        damageDisplay.innerText = player.damage;
-        // ダメージが大きいほど吹っ飛ぶ（ノックバック計算）
-        player.dx = -player.facing * (player.damage / 10);
-        player.dy = - (player.damage / 20);
+function checkHit(atk, vic) {
+    if (atk.attackActive && atk.attackTimer === 14) {
+        const ax = atk.x + (atk.facing === 1 ? atk.w : -20);
+        if (ax + 20 > vic.x && ax < vic.x + vic.w && atk.y < vic.y + vic.h && atk.y + 30 > vic.y) {
+            vic.damage += 12;
+            const kb = vic.damage / 4;
+            vic.dx = atk.facing * kb;
+            vic.dy = -kb / 1.5;
+            updateUI();
+        }
     }
 }
 
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // ステージ描画
-    ctx.fillStyle = "#777";
-    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
-
-    // プレイヤー描画
-    ctx.fillStyle = player.attackActive ? "yellow" : "red";
-    ctx.fillRect(player.x, player.y, player.width, player.height);
-
-    // 攻撃判定の可視化
-    if (player.attackActive) {
-        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.fillRect(player.x + (player.facing === 1 ? player.width : -20), player.y + 5, 20, 20);
-    }
+function updateUI() {
+    document.getElementById("p-dmg").innerText = player.damage;
+    document.getElementById("cpu-dmg").innerText = cpu.damage;
 }
 
 function loop() {
-    update();
-    draw();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 背景の雲
+    ctx.fillStyle = "white";
+    ctx.beginPath(); ctx.arc(100, 80, 30, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(500, 120, 40, 0, Math.PI*2); ctx.fill();
+
+    // 足場の描画（角丸でかわいく）
+    ctx.fillStyle = "#fab1a0";
+    ctx.beginPath();
+    ctx.roundRect(150, 250, 300, 20, 10);
+    ctx.fill();
+
+    player.update();
+    cpu.update(player);
+    checkHit(player, cpu);
+    checkHit(cpu, player);
+
+    player.draw();
+    cpu.draw();
+
     requestAnimationFrame(loop);
+}
+// CanvasにroundRectがない古いブラウザ用の対策
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+        this.rect(x, y, w, h); return this;
+    };
 }
 loop();
 </script>

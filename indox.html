@@ -2,203 +2,453 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Retro Pixel Smash</title>
+    <title>Pixel Smash Ultimate - Final Edition</title>
     <style>
-        body { margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background: #1a1a2e; color: white; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
-        canvas { background: #16213e; border: 4px solid #0f3460; image-rendering: pixelated; width: 800px; height: 533px; }
-        .ui { margin-top: 10px; display: flex; gap: 60px; font-size: 32px; }
-        .p-dmg { color: #e94560; } .cpu-dmg { color: #4ecc71; }
+        body { margin: 0; background: #050505; color: #eee; font-family: 'Press Start 2P', cursive; /* ドット絵フォント */ display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
+        /* ドット絵フォントの読み込み (Google Fonts) */
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        
+        #gameCanvas { background: transparent; border: 8px solid #3d3d3d; box-shadow: 0 0 50px rgba(0,0,0,0.8); image-rendering: pixelated; width: 960px; height: 640px; } /* 実際の表示サイズ */
+        
+        .ui-container { position: absolute; bottom: 30px; display: flex; justify-content: space-between; width: 800px; font-size: 20px; }
+        .player-info, .cpu-info { background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 8px; border-bottom: 4px solid; text-shadow: 2px 2px #000; }
+        .player-info { border-color: #ff4757; }
+        .cpu-info { border-color: #2ed573; }
+        .damage-percent { font-size: 36px; font-weight: bold; }
+        .character-name { font-size: 16px; color: #ccc; }
+
+        .controls-info { position: absolute; bottom: 0px; font-size: 12px; color: #888; text-align: center; width: 100%; }
     </style>
 </head>
 <body>
 
 <canvas id="gameCanvas"></canvas>
-<div class="ui">
-    <div class="p-dmg">P1: <span id="p-dmg">0</span>%</div>
-    <div class="cpu-dmg">CPU: <span id="cpu-dmg">0</span>%</div>
+
+<div class="ui-container">
+    <div class="player-info">
+        <div class="character-name">PLAYER</div>
+        <div class="damage-percent" id="p-dmg">0%</div>
+        <div id="p-shield-bar" style="width:100px; height:8px; background-color:rgba(255,255,255,0.3); border:1px solid #fff; margin-top:5px;">
+            <div id="p-shield-fill" style="width:100%; height:100%; background-color:#48dbfb;"></div>
+        </div>
+    </div>
+    <div class="cpu-info">
+        <div class="character-name">CPU</div>
+        <div class="damage-percent" id="c-dmg">0%</div>
+        <div id="c-shield-bar" style="width:100px; height:8px; background-color:rgba(255,255,255,0.3); border:1px solid #fff; margin-top:5px;">
+            <div id="c-shield-fill" style="width:100%; height:100%; background-color:#48dbfb;"></div>
+        </div>
+    </div>
+</div>
+
+<div class="controls-info">
+    移動:矢印キー | ジャンプ:Space (2段可) | 攻撃(通常):A | 必殺技:S (+方向) | 回避(短押し) / シールド(長押し):Shift
 </div>
 
 <script>
+/**
+ * Pixel Smash Ultimate - Final Edition
+ *
+ * This script implements a highly detailed 2D pixel-art fighting game.
+ * Features include:
+ * - Advanced animation system with defined pixel-art frames for various states (idle, walk, jump, attack, hit, shield, dodge).
+ * - Sophisticated hitbox/hurtbox collision detection.
+ * - 4 distinct special moves (Neutral B, Up B, Side B, Down B) with unique visual effects and properties.
+ * - Dynamic camera that follows players and parallax scrolling background.
+ * - Hitstop, screen shake, and particle effects for impactful feedback.
+ * - AI for CPU player with basic strategic decision making.
+ * - Comprehensive UI/HUD for damage and shield status.
+ */
+
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-canvas.width = 300; // 低解像度にしてドット感を強調
-canvas.height = 200;
+canvas.width = 320; // Internal rendering resolution for pixel art style
+canvas.height = 240;
 
-const GRAVITY = 0.35;
-const AIR_RESISTANCE = 0.95;
-const GROUND_FRICTION = 0.82;
+// --- グローバルゲーム設定 ---
+const G = 0.38;                  // 重力
+const GROUND_FRICTION = 0.8;     // 地上摩擦
+const AIR_FRICTION = 0.95;       // 空中摩擦（減速はするが、地上より滑らか）
+const WALK_SPEED = 2.5;          // 移動速度
+const JUMP_FORCE = -7.0;         // ジャンプ力
+const MAX_JUMPS = 2;             // 最大ジャンプ回数
+const DODGE_DURATION = 20;       // 回避の持続時間 (フレーム)
+const SHIELD_BREAK_THRESHOLD = 0; // シールドブレイクする耐久度
 
-// --- ドット絵データ定義 (8x8ピクセル) ---
-const PIXEL_DATA = {
-    player: [
-        [0,0,1,1,1,0,0,0],
-        [0,1,1,1,1,1,0,0],
-        [0,1,0,1,0,1,0,0],
-        [0,1,1,1,1,1,0,0],
-        [0,0,1,1,1,0,0,0],
-        [0,1,1,1,1,1,0,0],
-        [0,1,0,1,0,1,0,0],
-        [0,1,0,0,0,1,0,0]
-    ],
-    cpu: [
-        [0,0,2,2,2,0,0,0],
-        [0,2,2,2,2,2,0,0],
-        [0,2,0,2,0,2,0,0],
-        [0,2,2,2,2,2,0,0],
-        [0,0,2,2,2,0,0,0],
-        [0,2,2,2,2,2,0,0],
-        [0,2,0,2,0,2,0,0],
-        [0,2,0,0,0,2,0,0]
-    ]
+// --- グローバルゲーム変数 ---
+let cameraX = 0;
+let shakeTimer = 0;
+let hitStopTimer = 0;
+let particles = [];
+let projectiles = []; // 飛び道具管理
+
+// --- キー入力管理 ---
+const keys = {};
+let shiftPressedTime = 0; // Shiftキーが押された時間
+let keyPressBuffer = {}; // キーの押し始めを記録
+
+window.addEventListener("keydown", e => {
+    if(!keys[e.code]) { // 押し始めのみ反応
+        keyPressBuffer[e.code] = true;
+        if(e.code === "Space") player.action("jump");
+        if(e.code === "KeyA") player.action("normalAttack");
+        if(e.code === "KeyS") player.action("specialAttack");
+        if(e.code === "ShiftLeft") shiftPressedTime = Date.now();
+    }
+    keys[e.code] = true;
+});
+
+window.addEventListener("keyup", e => {
+    delete keyPressBuffer[e.code]; // 押し始め記録をクリア
+    if(e.code === "ShiftLeft") {
+        const duration = Date.now() - shiftPressedTime;
+        if(duration < 150) player.action("dodge"); // 短押しで回避
+        player.endShield();
+    }
+    keys[e.code] = false;
+});
+
+// --- ドット絵データ (高クオリティアニメーション用) ---
+// 各キャラクターのフレームデータをここに定義します。
+// 例: { x: 0, y: 0, w: 16, h: 20, hitboxes: [{x:0,y:0,w:16,h:20}], hurtboxes: [{x:0,y:0,w:16,h:20}] }
+// - `hitboxes`: 攻撃判定 (相対座標)
+// - `hurtboxes`: 被弾判定 (相対座標)
+// ※ 描画されるドット絵のサイズと、実際の当たり判定サイズを分ける
+const ANIM_DATA = {
+    player: {
+        idle: [
+            // キャラクターが呼吸するようなアニメーション (頭部、胴体、足)
+            // Head: H, Body: B, Leg: L
+            { frame: [
+                [0,1,1,1,0], // H
+                [1,1,1,1,1], // H
+                [0,1,1,1,0], // B
+                [1,1,1,1,1], // B
+                [0,1,0,1,0], // L
+                [0,1,0,1,0]  // L
+            ], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] },
+            { frame: [
+                [0,1,1,1,0],
+                [1,1,1,1,1],
+                [0,1,1,1,0],
+                [1,1,1,1,1],
+                [0,1,0,1,0],
+                [0,1,0,1,0]
+            ], offset: {x:0, y:1}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] }
+        ],
+        walk: [
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[1,1,0,0,0],[0,0,1,1,1]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] },
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[0,0,1,1,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] }
+        ],
+        jump: [
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[0,0,1,0,0],[0,0,0,0,0]], offset: {x:0, y:-2}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] }
+        ],
+        normalAttack: [
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[0,1,0,1,0],[0,1,0,0,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}], hitboxes: [{x:16,y:4,w:10,h:10}] },
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[0,0,0,1,0],[0,0,0,0,1]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}], hitboxes: [{x:18,y:2,w:12,h:12}] }
+        ],
+        specialAttack_neutral: [ // B単体: 飛び道具の発射ポーズ
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[0,1,0,1,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] }
+        ],
+        specialAttack_up: [ // 上B: 回転上昇
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[1,0,0,0,1],[0,1,1,1,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}], hitboxes: [{x:-5,y:-5,w:26,h:26}] } // 全身判定
+        ],
+        specialAttack_side: [ // 横B: 突進
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[1,1,1,1,1],[0,0,1,1,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}], hitboxes: [{x:10,y:4,w:20,h:12}] }
+        ],
+        specialAttack_down: [ // 下B: 衝撃波
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] }
+        ],
+        hit: [
+            { frame: [[0,0,0,0,0],[1,1,1,1,1],[0,1,0,1,0],[0,1,1,1,0],[0,0,1,0,0],[0,1,0,1,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] }
+        ],
+        dodge: [
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[0,1,0,1,0],[0,0,0,0,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] }
+        ],
+        shield: [
+            { frame: [[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[1,1,1,1,1],[0,1,0,1,0],[0,1,0,1,0]], offset: {x:0, y:0}, w:16, h:20, hurtboxes: [{x:0,y:0,w:16,h:20}] }
+        ]
+    },
+    cpu: { // CPUキャラのドット絵はプレイヤーと色違いとして定義 (簡略化のため)
+        // データ構造はplayerと同じ、色情報のみCOLORS[2]を使用
+        idle: ANIM_DATA.player.idle,
+        walk: ANIM_DATA.player.walk,
+        jump: ANIM_DATA.player.jump,
+        normalAttack: ANIM_DATA.player.normalAttack,
+        specialAttack_neutral: ANIM_DATA.player.specialAttack_neutral,
+        specialAttack_up: ANIM_DATA.player.specialAttack_up,
+        specialAttack_side: ANIM_DATA.player.specialAttack_side,
+        specialAttack_down: ANIM_DATA.player.specialAttack_down,
+        hit: ANIM_DATA.player.hit,
+        dodge: ANIM_DATA.player.dodge,
+        shield: ANIM_DATA.player.shield
+    }
 };
 
-const COLORS = { 1: "#e94560", 2: "#4ecc71", 0: "transparent" };
+const PIXEL_COLORS = {
+    player: { 1: "#ff4757", 0: "transparent" }, // P1カラー: 赤
+    cpu: { 1: "#2ed573", 0: "transparent" }    // CPUカラー: 緑
+};
 
-function drawPixelArt(type, x, y, facing, isAttacking) {
-    const data = PIXEL_DATA[type];
-    const pixelSize = 3;
+// ドット絵描画ヘルパー関数
+function drawPixelArt(entity, type, x, y, frameIndex = 0, offsetX = 0, offsetY = 0) {
+    const animSet = ANIM_DATA[entity.type][type];
+    if (!animSet || animSet.length === 0) return;
+
+    const frameData = animSet[frameIndex % animSet.length];
+    const pixelMap = frameData.frame;
+    const pixelSize = 2; // 各ピクセルの描画サイズ
+
     ctx.save();
-    ctx.translate(x + (facing === -1 ? 24 : 0), y);
-    ctx.scale(facing, 1);
+    ctx.translate(x + offsetX + frameData.offset.x, y + offsetY + frameData.offset.y);
+    ctx.scale(entity.facing, 1); // 向きに応じて反転
     
-    data.forEach((row, rowIndex) => {
-        row.forEach((pixel, colIndex) => {
+    // ドット絵を実際に描画
+    pixelMap.forEach((row, rIdx) => {
+        row.forEach((pixel, cIdx) => {
             if (pixel !== 0) {
-                ctx.fillStyle = isAttacking ? "white" : COLORS[pixel];
-                ctx.fillRect(colIndex * pixelSize, rowIndex * pixelSize, pixelSize, pixelSize);
+                ctx.fillStyle = PIXEL_COLORS[entity.type][pixel] || "#FFF";
+                ctx.fillRect(cIdx * pixelSize, rIdx * pixelSize, pixelSize, pixelSize);
             }
         });
     });
+
     ctx.restore();
 }
 
-class Character {
-    constructor(x, y, type, isCPU) {
+// --- パーティクルシステム ---
+class Particle {
+    constructor(x, y, vx, vy, life, color, size = 1) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.life = life; this.maxLife = life; this.color = color; this.size = size;
+        this.gravity = 0.1;
+    }
+    update() {
+        this.x += this.vx; this.y += this.vy;
+        this.vy += this.gravity; // 重力で落下
+        this.life--;
+    }
+    draw(cameraOffset) {
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = this.life / this.maxLife;
+        ctx.fillRect(this.x - cameraOffset.x, this.y - cameraOffset.y, this.size, this.size);
+        ctx.globalAlpha = 1;
+    }
+}
+
+function spawnParticles(x, y, count, color, minVx, maxVx, minVy, maxVy, life, size = 1) {
+    for (let i = 0; i < count; i++) {
+        particles.push(new Particle(
+            x + (Math.random() - 0.5) * 5,
+            y + (Math.random() - 0.5) * 5,
+            minVx + Math.random() * (maxVx - minVx),
+            minVy + Math.random() * (maxVy - minVy),
+            life, color, size
+        ));
+    }
+}
+
+// --- 飛び道具クラス (例: B単体) ---
+class Projectile {
+    constructor(x, y, facing, type, owner) {
         this.x = x; this.y = y;
-        this.w = 24; this.h = 24;
+        this.w = 8; this.h = 8;
+        this.dx = facing * 5; this.dy = 0;
+        this.life = 60; // 60フレームで消滅
         this.type = type;
+        this.owner = owner; // 発射したキャラクター
+        this.damage = 8;
+        this.knockbackX = 4;
+        this.knockbackY = 2;
+        this.color = owner.color;
+    }
+    update() {
+        this.x += this.dx; this.y += this.dy;
+        this.life--;
+    }
+    draw(cameraOffset) {
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x - cameraOffset.x, this.y - cameraOffset.y, this.w, this.h);
+    }
+    isAlive() { return this.life > 0; }
+}
+
+// --- キャラクタークラス ---
+class Character {
+    constructor(x, y, charType, isCPU) {
+        this.x = x; this.y = y;
+        this.w = 16; this.h = 20; // ドット絵の描画サイズに合わせる
         this.dx = 0; this.dy = 0;
-        this.damage = 0;
-        this.jumpCount = 0;
-        this.facing = 1;
-        this.attackActive = false;
-        this.attackTimer = 0;
+        this.charType = charType; // "player" or "cpu"
+        this.color = PIXEL_COLORS[charType][1];
         this.isCPU = isCPU;
+        this.hp = 0; // ダメージ
+        this.jumps = 0;
+        this.facing = 1; // 1: 右, -1: 左
+        
+        this.state = "idle"; // idle, walk, jump, fall, normalAttack, specialAttack, dodge, hit, shield
+        this.stateTimer = 0; // 各状態の持続時間
+        this.invincibleTimer = 0; // 無敵時間
+        this.shieldHealth = 100; // シールド耐久度
+        this.animFrame = 0; // アニメーションフレームカウンター
+        this.currentAttack = null; // 現在実行中の攻撃データ
         this.onGround = false;
+        this.flashTimer = 0; // 被弾時の点滅用
     }
 
+    // --- 状態更新 ---
     update(target) {
-        if (this.isCPU) this.ai();
+        if (hitStopTimer > 0) return; // ヒットストップ中は更新しない
 
-        // 物理演算
-        this.dx *= this.onGround ? GROUND_FRICTION : AIR_RESISTANCE;
-        this.dy += GRAVITY;
+        // 被弾点滅
+        if (this.flashTimer > 0) this.flashTimer--;
+        
+        // 無敵時間
+        if (this.invincibleTimer > 0) this.invincibleTimer--;
+
+        // シールド処理
+        if (!this.isCPU && keys.ShiftLeft && this.state !== "attack" && this.state !== "hit" && this.state !== "dodge") {
+            this.state = "shield";
+            this.dx *= 0.1; // シールド中は動きが鈍る
+            this.shieldHealth = Math.max(SHIELD_BREAK_THRESHOLD, this.shieldHealth - 0.6); // シールド減少
+            if (this.shieldHealth <= SHIELD_BREAK_THRESHOLD) this.breakShield();
+        } else if (this.state === "shield" && (!keys.ShiftLeft || this.shieldHealth <= SHIELD_BREAK_THRESHOLD)) {
+            this.endShield();
+        }
+        if (this.state !== "shield" && this.shieldHealth < 100) {
+            this.shieldHealth = Math.min(100, this.shieldHealth + 0.3); // シールド回復
+        }
+        
+        // AI処理
+        if (this.isCPU) this.updateAI(target);
+
+        // 各状態での動き
+        if (this.state === "idle" || this.state === "walk") {
+            if (!this.isCPU) {
+                if (keys.ArrowLeft) this.dx = -WALK_SPEED;
+                else if (keys.ArrowRight) this.dx = WALK_SPEED;
+                else this.dx = 0; // キーを離したら即座に停止
+            } else {
+                // CPUの移動はAIで設定される
+            }
+            if (this.dx !== 0 && this.onGround) this.state = "walk";
+            else if (this.onGround) this.state = "idle";
+        } else if (this.state === "dodge") {
+            this.dx = this.facing * 5; // 回避中は一定速度で移動
+        } else if (this.state === "specialAttack" && this.currentAttack.name === "up_b") {
+            // 上B中は上昇
+        } else {
+            this.dx *= AIR_FRICTION; // 空中や攻撃中は空気抵抗で減速
+        }
+        
+        this.dy += G; // 重力適用
+
         this.x += this.dx;
         this.y += this.dy;
 
-        // 床判定
-        if (this.dy > 0 && this.x + this.w > 80 && this.x < 220 && this.y + this.h > 150 && this.y + this.h < 160) {
-            this.y = 150 - this.h;
+        // 床との当たり判定
+        const groundY = 150; // 足場のY座標
+        if (this.dy > 0 && this.x + this.w > 80 && this.x < 220 && this.y + this.h > groundY && this.y + this.h < groundY + 15) {
+            this.y = groundY - this.h;
             this.dy = 0;
-            this.jumpCount = 0;
+            this.jumps = 0;
             this.onGround = true;
+            if (this.state === "fall" || this.state === "jump" || this.state === "dodge") this.state = "idle";
         } else {
             this.onGround = false;
         }
+        if (this.dy > 0 && this.onGround === false) this.state = "fall"; // 落下状態
 
-        if (this.attackTimer > 0) this.attackTimer--;
-        else this.attackActive = false;
-
-        if (this.x < -50 || this.x > 350 || this.y < -50 || this.y > 250) this.respawn();
-    }
-
-    ai() {
-        const dist = player.x - this.x;
-        if (Math.abs(dist) > 30) {
-            this.dx += (dist > 0 ? 0.3 : -0.3);
-            this.facing = dist > 0 ? 1 : -1;
+        // 状態タイマーの更新
+        if (this.stateTimer > 0) this.stateTimer--;
+        else if (this.state !== "idle" && this.state !== "walk" && this.state !== "fall" && this.state !== "jump") {
+            this.state = "idle"; // タイマー切れでアイドル状態へ
+            this.currentAttack = null;
         }
-        if (Math.abs(dist) < 40 && Math.random() < 0.05) this.attack();
-        if (this.y > 160 && !this.onGround) { this.jump(); if(this.y > 180) this.special(); }
-    }
 
-    jump() {
-        if (this.jumpCount < 2) {
-            this.dy = -7;
-            this.jumpCount++;
-            this.onGround = false;
+        // 場外判定
+        if (this.x < -100 || this.x > canvas.width + 100 || this.y < -100 || this.y > canvas.height + 100) {
+            this.respawn();
         }
+
+        this.animFrame++; // アニメーション更新
+        this.updateUI(); // UI更新
     }
 
-    attack() {
-        if (!this.attackActive) { this.attackActive = true; this.attackTimer = 10; }
-    }
+    // --- 各種アクション ---
+    action(actionType) {
+        if (this.state === "hit" || this.invincibleTimer > 0) return; // 無敵中や被弾中は行動不能
 
-    special() {
-        this.dy = -9; this.dx *= 0.5; this.attackActive = true; this.attackTimer = 15;
-    }
+        if (actionType === "jump") {
+            if (this.state === "shield") return; // シールド中はジャンプ不可
+            if (this.jumps < MAX_JUMPS) {
+                this.dy = JUMP_FORCE;
+                this.jumps++;
+                this.state = "jump";
+                spawnParticles(this.x + this.w / 2, this.y + this.h, 5, "#fff", -1, 1, -2, -1, 15); // ジャンプ煙
+            }
+        } else if (actionType === "normalAttack") {
+            if (this.state === "idle" || this.state === "walk" || this.state === "jump" || this.state === "fall") {
+                this.state = "normalAttack";
+                this.stateTimer = 20; // 攻撃持続フレーム
+                this.currentAttack = { name: "normal", frame: 0, hit: false };
+                spawnParticles(this.x + this.w * this.facing, this.y + this.h / 2, 3, "#FFD700", 2 * this.facing, 4 * this.facing, -1, 1, 10);
+            }
+        } else if (actionType === "specialAttack") {
+            if (this.state === "idle" || this.state === "walk" || this.state === "jump" || this.state === "fall") {
+                let atkName = "neutral_b";
+                if (keys.ArrowUp) atkName = "up_b";
+                else if (keys.ArrowDown) atkName = "down_b";
+                else if (keys.ArrowLeft || keys.ArrowRight) atkName = "side_b";
+                
+                this.state = "specialAttack";
+                this.stateTimer = 30; // 必殺技の持続時間
+                this.currentAttack = { name: atkName, frame: 0, hit: false };
 
-    respawn() {
-        this.x = 150; this.y = 50; this.dx = 0; this.dy = 0; this.damage = 0; updateUI();
-    }
-}
-
-const player = new Character(100, 100, "player", false);
-const cpu = new Character(200, 100, "cpu", true);
-
-const keys = {};
-window.addEventListener("keydown", e => {
-    keys[e.code] = true;
-    if (e.code === "Space") player.jump();
-    if (e.code === "KeyZ") keys["ArrowUp"] ? player.special() : player.attack();
-});
-window.addEventListener("keyup", e => keys[e.code] = false);
-
-function updateUI() {
-    document.getElementById("p-dmg").innerText = player.damage;
-    document.getElementById("cpu-dmg").innerText = cpu.damage;
-}
-
-function loop() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // 背景と影
-    ctx.fillStyle = "rgba(0,0,0,0.2)";
-    ctx.fillRect(85, 155, 130, 5); // ステージの影
-
-    // ステージ
-    ctx.fillStyle = "#0f3460";
-    ctx.fillRect(80, 150, 140, 10);
-
-    // 入力処理
-    if (keys.ArrowRight) { player.dx += 0.5; player.facing = 1; }
-    if (keys.ArrowLeft) { player.dx -= 0.5; player.facing = -1; }
-
-    // キャラ更新と当たり判定
-    [player, cpu].forEach(c => c.update());
-    checkHit(player, cpu);
-    checkHit(cpu, player);
-
-    // 描画
-    drawPixelArt("player", player.x, player.y, player.facing, player.attackActive);
-    drawPixelArt("cpu", cpu.x, cpu.y, cpu.facing, cpu.attackActive);
-
-    requestAnimationFrame(loop);
-}
-
-function checkHit(atk, vic) {
-    if (atk.attackActive && atk.attackTimer === 9) {
-        const hitX = atk.x + (atk.facing === 1 ? 20 : -10);
-        if (hitX + 15 > vic.x && hitX < vic.x + vic.w && atk.y < vic.y + vic.h && atk.y + 20 > vic.y) {
-            vic.damage += 8;
-            vic.dx = atk.facing * (vic.damage / 6);
-            vic.dy = -vic.damage / 10;
-            updateUI();
+                if (atkName === "neutral_b") {
+                    projectiles.push(new Projectile(this.x + this.w * this.facing, this.y + this.h/2 - 4, this.facing, "bullet", this));
+                    spawnParticles(this.x + this.w * this.facing, this.y + this.h / 2, 5, this.color, this.facing * 2, this.facing * 4, -1, 1, 15);
+                } else if (atkName === "up_b") {
+                    this.dy = JUMP_FORCE * 1.5; // 大ジャンプ
+                    this.invincibleTimer = 10; // 少し無敵
+                    spawnParticles(this.x + this.w / 2, this.y + this.h, 10, "#fff", -2, 2, -5, -3, 20);
+                } else if (atkName === "side_b") {
+                    this.dx = this.facing * 8; // 高速突進
+                    this.invincibleTimer = 10;
+                    spawnParticles(this.x + this.w / 2, this.y + this.h / 2, 10, this.color, this.facing * -3, this.facing * -1, -2, 2, 15);
+                } else if (atkName === "down_b") {
+                    spawnParticles(this.x + this.w / 2, this.y + this.h, 15, "#FFA500", -3, 3, -1, 0, 25, 2); // 衝撃波エフェクト
+                }
+            }
+        } else if (actionType === "dodge") {
+            if (this.state === "idle" || this.state === "walk" || this.state === "jump" || this.state === "fall") {
+                this.state = "dodge";
+                this.stateTimer = DODGE_DURATION;
+                this.invincibleTimer = DODGE_DURATION; // 回避中は無敵
+                this.dx = this.facing * 6; // 回避方向への移動
+                spawnParticles(this.x + this.w / 2, this.y + this.h / 2, 8, "#eee", -this.facing * 3, -this.facing * 1, -2, 2, 12);
+            }
         }
     }
-}
 
-loop();
-</script>
-</body>
-</html>
+    endShield() {
+        if (this.state === "shield") {
+            this.state = "idle";
+            this.stateTimer = 0; // 硬直なし
+        }
+    }
+
+    breakShield() {
+        this.state = "hit"; // シールドブレイクで大硬直
+        this.stateTimer = 60; // 長い硬直
+        this.invincibleTimer = 30;
+        this.shieldHealth = 0;
+        this.hp += 20; // シールドブレイクはダメージも蓄積
+        this.dx = 0; this.dy = -5; // 浮き上がる
+        spawnParticles(this.x + this.w / 2, this.y + this.h / 2, 20, "#48dbfb", -4, 4, -4, 4, 30, 2);
+        shakeTimer = 20;
+    }
+
+    // --- CPUのAIロジック ---
+    updateAI(target) {
+        if (this.state === "hit" || this.state === "dodge" || this.state

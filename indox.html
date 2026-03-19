@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>2D Dot Action Game</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #333;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #5c94fc; /* マリオ風の空の色 */
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            /* ドット絵をくっきり表示させる設定 */
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// 画面サイズ設定
+canvas.width = 480;
+canvas.height = 320;
+
+// ゲーム設定
+const gravity = 0.8; // 重力
+const walkSpeed = 4;
+const jumpPower = -12;
+
+// プレイヤーオブジェクト
+const player = {
+    x: 50,
+    y: 200,
+    width: 32,
+    height: 32,
+    color: "#ff0000", // 赤色（マリオ風）
+    dx: 0,
+    dy: 0,
+    isJumping: false
+};
+
+// キー入力の状態管理
+const keys = {
+    ArrowRight: false,
+    ArrowLeft: false,
+    Space: false
+};
+
+// イベントリスナー（キーを押した時・離した時）
+window.addEventListener("keydown", (e) => {
+    if (e.code in keys) keys[e.code] = true;
+});
+window.addEventListener("keyup", (e) => {
+    if (e.code in keys) keys[e.code] = false;
+});
+
+// ゲームの更新ロジック
+function update() {
+    // 左右移動
+    if (keys.ArrowRight) player.dx = walkSpeed;
+    else if (keys.ArrowLeft) player.dx = -walkSpeed;
+    else player.dx = 0;
+
+    // ジャンプ（地面にいる時だけ可能）
+    if (keys.Space && !player.isJumping) {
+        player.dy = jumpPower;
+        player.isJumping = true;
+    }
+
+    // 重力の適用
+    player.dy += gravity;
+    player.x += player.dx;
+    player.y += player.dy;
+
+    // 地面との当たり判定（簡易版）
+    const groundLevel = canvas.height - 40;
+    if (player.y + player.height > groundLevel) {
+        player.y = groundLevel - player.height;
+        player.dy = 0;
+        player.isJumping = false;
+    }
+
+    // 画面外（左右）に行かないように制限
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+}
+
+// 描画処理
+function draw() {
+    // 画面クリア
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 地面の描画
+    ctx.fillStyle = "#885418"; // 茶色（土）
+    ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+    ctx.fillStyle = "#00aa00"; // 緑色（草）
+    ctx.fillRect(0, canvas.height - 40, canvas.width, 10);
+
+    // プレイヤーの描画（ドット絵風の四角）
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+    
+    // 目を描いてキャラっぽくする
+    ctx.fillStyle = "white";
+    ctx.fillRect(player.x + 20, player.y + 5, 8, 8);
+}
+
+// ループ実行
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

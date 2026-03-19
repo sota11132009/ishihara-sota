@@ -2,166 +2,157 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Kawaii Smash - Update</title>
+    <title>Retro Pixel Smash</title>
     <style>
-        body { margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(#a1c4fd, #c2e9fb); font-family: 'Arial', sans-serif; overflow: hidden; }
-        canvas { background: #e0f7fa; border: 8px solid #fff; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); image-rendering: pixelated; }
-        .ui { margin-top: 15px; display: flex; gap: 40px; font-size: 28px; font-weight: bold; text-shadow: 2px 2px #fff; }
-        .p-dmg { color: #ff6b6b; } .cpu-dmg { color: #48dbfb; }
+        body { margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background: #1a1a2e; color: white; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
+        canvas { background: #16213e; border: 4px solid #0f3460; image-rendering: pixelated; width: 800px; height: 533px; }
+        .ui { margin-top: 10px; display: flex; gap: 60px; font-size: 32px; }
+        .p-dmg { color: #e94560; } .cpu-dmg { color: #4ecc71; }
     </style>
 </head>
 <body>
 
 <canvas id="gameCanvas"></canvas>
 <div class="ui">
-    <div class="p-dmg">PLAYER: <span id="p-dmg">0</span>%</div>
+    <div class="p-dmg">P1: <span id="p-dmg">0</span>%</div>
     <div class="cpu-dmg">CPU: <span id="cpu-dmg">0</span>%</div>
 </div>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-canvas.width = 600;
-canvas.height = 400;
+canvas.width = 300; // 低解像度にしてドット感を強調
+canvas.height = 200;
 
-const GRAVITY = 0.4;
-const FRICTION = 0.88;
+const GRAVITY = 0.35;
+const AIR_RESISTANCE = 0.95;
+const GROUND_FRICTION = 0.82;
+
+// --- ドット絵データ定義 (8x8ピクセル) ---
+const PIXEL_DATA = {
+    player: [
+        [0,0,1,1,1,0,0,0],
+        [0,1,1,1,1,1,0,0],
+        [0,1,0,1,0,1,0,0],
+        [0,1,1,1,1,1,0,0],
+        [0,0,1,1,1,0,0,0],
+        [0,1,1,1,1,1,0,0],
+        [0,1,0,1,0,1,0,0],
+        [0,1,0,0,0,1,0,0]
+    ],
+    cpu: [
+        [0,0,2,2,2,0,0,0],
+        [0,2,2,2,2,2,0,0],
+        [0,2,0,2,0,2,0,0],
+        [0,2,2,2,2,2,0,0],
+        [0,0,2,2,2,0,0,0],
+        [0,2,2,2,2,2,0,0],
+        [0,2,0,2,0,2,0,0],
+        [0,2,0,0,0,2,0,0]
+    ]
+};
+
+const COLORS = { 1: "#e94560", 2: "#4ecc71", 0: "transparent" };
+
+function drawPixelArt(type, x, y, facing, isAttacking) {
+    const data = PIXEL_DATA[type];
+    const pixelSize = 3;
+    ctx.save();
+    ctx.translate(x + (facing === -1 ? 24 : 0), y);
+    ctx.scale(facing, 1);
+    
+    data.forEach((row, rowIndex) => {
+        row.forEach((pixel, colIndex) => {
+            if (pixel !== 0) {
+                ctx.fillStyle = isAttacking ? "white" : COLORS[pixel];
+                ctx.fillRect(colIndex * pixelSize, rowIndex * pixelSize, pixelSize, pixelSize);
+            }
+        });
+    });
+    ctx.restore();
+}
 
 class Character {
-    constructor(x, y, color, isCPU) {
+    constructor(x, y, type, isCPU) {
         this.x = x; this.y = y;
-        this.w = 32; this.h = 32;
-        this.color = color;
+        this.w = 24; this.h = 24;
+        this.type = type;
         this.dx = 0; this.dy = 0;
         this.damage = 0;
         this.jumpCount = 0;
-        this.maxJumps = 2; // 2段ジャンプ
         this.facing = 1;
         this.attackActive = false;
         this.attackTimer = 0;
         this.isCPU = isCPU;
-        this.state = "idle"; // idle, attack, recovery
+        this.onGround = false;
     }
 
     update(target) {
-        if (this.isCPU) this.aiLogic(target);
+        if (this.isCPU) this.ai();
 
-        this.dx *= FRICTION;
+        // 物理演算
+        this.dx *= this.onGround ? GROUND_FRICTION : AIR_RESISTANCE;
         this.dy += GRAVITY;
         this.x += this.dx;
         this.y += this.dy;
 
-        // ステージ判定（雲の上の足場）
-        if (this.dy > 0 && this.x + this.w > 150 && this.x < 450 && this.y + this.h > 250 && this.y + this.h < 275) {
-            this.y = 250 - this.h;
+        // 床判定
+        if (this.dy > 0 && this.x + this.w > 80 && this.x < 220 && this.y + this.h > 150 && this.y + this.h < 160) {
+            this.y = 150 - this.h;
             this.dy = 0;
             this.jumpCount = 0;
-            if(this.state === "recovery") this.state = "idle";
+            this.onGround = true;
+        } else {
+            this.onGround = false;
         }
 
         if (this.attackTimer > 0) this.attackTimer--;
-        else { this.attackActive = false; if(this.state !== "recovery") this.state = "idle"; }
+        else this.attackActive = false;
 
-        if (this.x < -100 || this.x > 700 || this.y < -100 || this.y > 500) this.respawn();
+        if (this.x < -50 || this.x > 350 || this.y < -50 || this.y > 250) this.respawn();
     }
 
-    aiLogic(target) {
-        const dist = target.x - this.x;
-        if (Math.abs(dist) > 50) this.dx += (dist > 0 ? 0.4 : -0.4);
-        if (Math.abs(dist) < 60 && Math.random() < 0.03) this.attack();
-        // 復帰AI
-        if (this.y > 280 && this.jumpCount < this.maxJumps) this.jump();
-        if (this.y > 320) this.specialAttack(); 
+    ai() {
+        const dist = player.x - this.x;
+        if (Math.abs(dist) > 30) {
+            this.dx += (dist > 0 ? 0.3 : -0.3);
+            this.facing = dist > 0 ? 1 : -1;
+        }
+        if (Math.abs(dist) < 40 && Math.random() < 0.05) this.attack();
+        if (this.y > 160 && !this.onGround) { this.jump(); if(this.y > 180) this.special(); }
     }
 
     jump() {
-        if (this.jumpCount < this.maxJumps) {
-            this.dy = -10;
+        if (this.jumpCount < 2) {
+            this.dy = -7;
             this.jumpCount++;
+            this.onGround = false;
         }
     }
 
     attack() {
-        if (!this.attackActive) {
-            this.attackActive = true;
-            this.attackTimer = 15;
-            this.state = "attack";
-        }
+        if (!this.attackActive) { this.attackActive = true; this.attackTimer = 10; }
     }
 
-    specialAttack() {
-        if (this.state !== "recovery") {
-            this.dy = -14; // 上Bの跳ね上がり
-            this.state = "recovery";
-            this.attackActive = true;
-            this.attackTimer = 20;
-        }
+    special() {
+        this.dy = -9; this.dx *= 0.5; this.attackActive = true; this.attackTimer = 15;
     }
 
     respawn() {
-        this.x = 300; this.y = 100; this.dx = 0; this.dy = 0; this.damage = 0;
-        this.jumpCount = 0; this.state = "idle"; updateUI();
-    }
-
-    draw() {
-        // キャラクターの影
-        ctx.fillStyle = "rgba(0,0,0,0.1)";
-        ctx.beginPath();
-        ctx.ellipse(this.x + this.w/2, 255, 15, 5, 0, 0, Math.PI*2);
-        ctx.fill();
-
-        // 本体（ドット絵風）
-        ctx.fillStyle = this.color;
-        ctx.roundRect(this.x, this.y, this.w, this.h, 8); 
-        ctx.fill();
-
-        // 顔（向きに合わせて変更）
-        ctx.fillStyle = "#333";
-        const eyeX = this.facing === 1 ? this.x + 20 : this.x + 4;
-        ctx.fillRect(eyeX, this.y + 10, 6, 6); // 目
-        ctx.fillStyle = "#ffcccc";
-        ctx.fillRect(eyeX + (this.facing*2), this.y + 18, 4, 4); // ほっぺ
-
-        // 攻撃エフェクト
-        if (this.attackActive) {
-            ctx.fillStyle = this.state === "recovery" ? "#fff" : "rgba(255,255,255,0.8)";
-            const ax = this.facing === 1 ? this.x + this.w : this.x - 20;
-            ctx.beginPath();
-            ctx.arc(ax + 10, this.y + 15, 15, 0, Math.PI*2);
-            ctx.fill();
-        }
+        this.x = 150; this.y = 50; this.dx = 0; this.dy = 0; this.damage = 0; updateUI();
     }
 }
 
-const player = new Character(200, 100, "#ff7675", false);
-const cpu = new Character(400, 100, "#74b9ff", true);
-
-window.addEventListener("keydown", e => {
-    if (e.code === "ArrowRight") { player.dx += 0.8; player.facing = 1; }
-    if (e.code === "ArrowLeft") { player.dx -= 0.8; player.facing = -1; }
-    if (e.code === "Space") player.jump();
-    if (e.code === "KeyZ") {
-        if (keys["ArrowUp"]) player.specialAttack(); // 上B
-        else player.attack();
-    }
-});
+const player = new Character(100, 100, "player", false);
+const cpu = new Character(200, 100, "cpu", true);
 
 const keys = {};
-window.addEventListener("keydown", e => keys[e.code] = true);
+window.addEventListener("keydown", e => {
+    keys[e.code] = true;
+    if (e.code === "Space") player.jump();
+    if (e.code === "KeyZ") keys["ArrowUp"] ? player.special() : player.attack();
+});
 window.addEventListener("keyup", e => keys[e.code] = false);
-
-function checkHit(atk, vic) {
-    if (atk.attackActive && atk.attackTimer === 14) {
-        const ax = atk.x + (atk.facing === 1 ? atk.w : -20);
-        if (ax + 20 > vic.x && ax < vic.x + vic.w && atk.y < vic.y + vic.h && atk.y + 30 > vic.y) {
-            vic.damage += 12;
-            const kb = vic.damage / 4;
-            vic.dx = atk.facing * kb;
-            vic.dy = -kb / 1.5;
-            updateUI();
-        }
-    }
-}
 
 function updateUI() {
     document.getElementById("p-dmg").innerText = player.damage;
@@ -171,33 +162,42 @@ function updateUI() {
 function loop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 背景の雲
-    ctx.fillStyle = "white";
-    ctx.beginPath(); ctx.arc(100, 80, 30, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(500, 120, 40, 0, Math.PI*2); ctx.fill();
+    // 背景と影
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillRect(85, 155, 130, 5); // ステージの影
 
-    // 足場の描画（角丸でかわいく）
-    ctx.fillStyle = "#fab1a0";
-    ctx.beginPath();
-    ctx.roundRect(150, 250, 300, 20, 10);
-    ctx.fill();
+    // ステージ
+    ctx.fillStyle = "#0f3460";
+    ctx.fillRect(80, 150, 140, 10);
 
-    player.update();
-    cpu.update(player);
+    // 入力処理
+    if (keys.ArrowRight) { player.dx += 0.5; player.facing = 1; }
+    if (keys.ArrowLeft) { player.dx -= 0.5; player.facing = -1; }
+
+    // キャラ更新と当たり判定
+    [player, cpu].forEach(c => c.update());
     checkHit(player, cpu);
     checkHit(cpu, player);
 
-    player.draw();
-    cpu.draw();
+    // 描画
+    drawPixelArt("player", player.x, player.y, player.facing, player.attackActive);
+    drawPixelArt("cpu", cpu.x, cpu.y, cpu.facing, cpu.attackActive);
 
     requestAnimationFrame(loop);
 }
-// CanvasにroundRectがない古いブラウザ用の対策
-if (!CanvasRenderingContext2D.prototype.roundRect) {
-    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
-        this.rect(x, y, w, h); return this;
-    };
+
+function checkHit(atk, vic) {
+    if (atk.attackActive && atk.attackTimer === 9) {
+        const hitX = atk.x + (atk.facing === 1 ? 20 : -10);
+        if (hitX + 15 > vic.x && hitX < vic.x + vic.w && atk.y < vic.y + vic.h && atk.y + 20 > vic.y) {
+            vic.damage += 8;
+            vic.dx = atk.facing * (vic.damage / 6);
+            vic.dy = -vic.damage / 10;
+            updateUI();
+        }
+    }
 }
+
 loop();
 </script>
 </body>
